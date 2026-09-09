@@ -2,12 +2,14 @@ import torch
 import string
 from functools import partial
 
-def covariant_derivative(
+from utils import normalize_dims
+
+def derivative_tensor(
     field: torch.Tensor,
     k: int = 1,
     dims: list[int] = None,
 ) -> torch.Tensor:
-    """Take k covariant derivatives of field along its spatial dimensions.
+    """Take k derivatives of field along its spatial dimensions.
     Define n = len(dims).
 
     Args:
@@ -18,17 +20,15 @@ def covariant_derivative(
     Returns:
         Tensor of shape [..., n, ..., n] with k additional dimensions of size n.
     """
-    if dims is None:
-        dims = list(range(field.ndim))
-    dims = [d % field.ndim for d in dims]
+    dims = normalize_dims(field, dims)
 
     B = field
     for _ in range(k):
         B = torch.stack(torch.gradient(B, dim=dims), dim=-1)
     return B
 
-grad = partial(covariant_derivative, k=1)
-hessian = partial(covariant_derivative, k=2)
+grad = partial(derivative_tensor, k=1)
+hessian = partial(derivative_tensor, k=2)
 
 def gauge_derivative(
     field: torch.Tensor,
@@ -49,7 +49,7 @@ def gauge_derivative(
         Tensor of shape [...].
     """
     k = len(signature)
-    deriv = covariant_derivative(field, k=k, dims=dims) 
+    deriv = derivative_tensor(field, k=k, dims=dims) 
     letters = string.ascii_letters[:k]                               
     equation = ",".join(["..." + letters] + ["..." + c for c in letters]) + "->..."
     # print(equation)

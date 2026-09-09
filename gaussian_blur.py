@@ -1,5 +1,7 @@
 import torch
 
+from utils import normalize_dims
+
 
 def gaussian_blur(
     field: torch.Tensor,
@@ -16,10 +18,8 @@ def gaussian_blur(
     Returns:
         Tensor of the same shape as field.
     """
-    if dims is None:
-        dims = list(range(field.ndim))
-    dims = [d % field.ndim for d in dims]
-    
+    dims = normalize_dims(field, dims)
+
     freq2 = torch.zeros(field.ndim * [1], dtype=field.dtype, device=field.device)
     for d in dims:
         shape = field.ndim * [1]
