@@ -38,4 +38,4 @@ For the structure tensor they run along and across the local edge.
 | `frames.py` | `gauge_frame_hessian`, `gauge_frame_structure_tensor` |
 | `gaussian_blur.py` | `gaussian_blur` |
 | `utils.py` | `normalize_dims` |
-| `main.ipynb` | worked example and the figures above |
+| `make_figures.py` | regenerates the figures above |

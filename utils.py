@@ -3,7 +3,7 @@ import torch
 
 def normalize_dims(
     field: torch.Tensor,
-    dims: list[int] | None,
+    dims: list[int],
 ) -> list[int]:
     """Resolve a dims argument into a list of non-negative dimension indices of field.
 

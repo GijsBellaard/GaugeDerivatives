@@ -2,11 +2,10 @@ import torch
 
 from utils import normalize_dims
 
-
 def gaussian_blur(
     field: torch.Tensor,
     sigma: float,
-    dims: list[int] | None = None
+    dims: list[int] = None
 ) -> torch.Tensor:
     """Blur a tensor with an isotropic Gaussian of standard deviation sigma samples, using fft.
 
