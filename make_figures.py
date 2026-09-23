@@ -9,7 +9,7 @@ from PIL import Image
 from field import Field, change_basis, tensor_product
 from frames import eigenframe
 from gaussian_blur import gaussian_blur
-from geometry import connection, covariant_derivative
+from geometry import levi_civita_connection, covariant_derivative
 
 IMAGES = Path(__file__).parent / "images"
 
@@ -78,7 +78,7 @@ def show_gauge_derivative(ax, component, signature, quantile=0.99):
 def make_frame_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image(), sigma=SIGMA)
     metric = euclidean(blurred.data.shape)
-    levi_civita = connection(metric)
+    levi_civita = levi_civita_connection(metric)
     frames = (
         ("Structure tensor",
          eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)[1]),
@@ -98,7 +98,7 @@ def make_frame_figure(path: Path) -> None:
 def make_derivative_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image(DERIVATIVE_SCALE), sigma=SIGMA / DERIVATIVE_SCALE)
     metric = euclidean(blurred.data.shape)
-    levi_civita = connection(metric)
+    levi_civita = levi_civita_connection(metric)
     _, frame = eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)
 
     fig, axes = plt.subplots(len(ORDERS), max(len(row) for row in ORDERS), figsize=(16, 13))

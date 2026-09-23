@@ -21,7 +21,7 @@ def partial_derivative(field: Field) -> Field:
     return Field(data, type)
 
 
-def connection(metric: Field) -> Field:
+def levi_civita_connection(metric: Field) -> Field:
     """Levi-Civita connection components of a metric, the torsion-free metric connection.
 
     G^a_bc = 1/2 g^ad (d_b g_dc + d_c g_db - d_d g_bc), with [..., a, b, c] = G^a_bc.
