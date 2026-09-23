@@ -19,12 +19,12 @@ def gaussian_blur(field: Field, sigma: float) -> Field:
     dims = field.spatial_dims
 
     # Transfer function exp(-sigma^2 |omega|^2 / 2) with omega = 2 pi f, f from fftfreq.
-    frequency = torch.zeros(data.ndim * [1], dtype=data.dtype, device=data.device)
+    frequency_squared = torch.zeros(data.ndim * [1], dtype=data.dtype, device=data.device)
     for d in dims:
         shape = data.ndim * [1]
         shape[d] = data.shape[d]
         axis = torch.fft.fftfreq(data.shape[d], dtype=data.dtype, device=data.device)
-        frequency = frequency + axis.reshape(shape).square()
-    decay = torch.exp(-2 * (torch.pi * sigma) ** 2 * frequency)
+        frequency_squared = frequency_squared + axis.reshape(shape).square()
+    decay = torch.exp(-2 * (torch.pi * sigma) ** 2 * frequency_squared)
     blurred = torch.fft.ifftn(torch.fft.fftn(data, dim=dims) * decay, dim=dims).real
     return Field(blurred, field.type)

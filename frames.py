@@ -56,8 +56,12 @@ def singular_frames(form: Field, metric: Field) -> tuple[Field, Field, Field]:
     solve F g^-1 F^T u = sigma^2 g u and F^T g^-1 F v = sigma^2 g v, and are paired so that
     F(u_i, v_j) = sigma_i delta_ij.
 
+    For a symmetric F both frames are those of eigenframe, so this is meant for a
+    non-symmetric F, such as a Hessian under a connection with torsion or the covariant
+    derivative of a covector field.
+
     Args:
-        form: Field of type BSll, e.g. a Hessian or structure tensor.
+        form: Field of type BSll.
         metric: Metric of type Sll.
 
     Returns:

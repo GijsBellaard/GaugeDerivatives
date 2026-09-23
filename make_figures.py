@@ -3,7 +3,7 @@ from pathlib import Path
 import matplotlib.cbook as cbook
 import matplotlib.pyplot as plt
 import torch
-import torchvision
+import torchvision.transforms.functional as TF
 from PIL import Image
 
 from field import Field, change_basis, tensor_product
@@ -13,11 +13,11 @@ from geometry import connection, covariant_derivative
 
 IMAGES = Path(__file__).parent / "images"
 
-SIGMA = 2.0                 # Blur of the photograph
-FRAME_SIGMA = 1.0           # Post blur of the structure tensor
-CROP = (120, 350, 160, 360) # Region shown in the frame figure
-STEP = 8                    # Draw a frame every STEP-th pixel
-DERIVATIVE_SCALE = 2        # Downsampling of the photograph for the derivative figure
+SIGMA = 2.0                  # Blur of the photograph
+FRAME_SIGMA = 1.0            # Blur of the structure tensor
+CROP = (120, 350, 160, 360)  # Region shown in the frame figure
+STEP = 8                     # Draw a frame every STEP-th pixel
+DERIVATIVE_SCALE = 2         # Downsampling of the photograph for the derivative figure
 
 FRAME_COLORS = ("#2a78d6", "#eb6834")
 ORDERS = [
@@ -26,28 +26,31 @@ ORDERS = [
     ([0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 1]),
 ]
 
+
 def load_image(scale: int = 1) -> Field:
+    """Grayscale sample photograph in [0, 1], downsampled by scale."""
     with cbook.get_sample_data("grace_hopper.jpg") as f:
-        image = torchvision.transforms.functional.pil_to_tensor(Image.open(f).convert("L"))[0] / 255
+        image = TF.pil_to_tensor(Image.open(f).convert("L"))[0] / 255
     h, w = image.shape
-    image = torchvision.transforms.functional.resize(image[None], [h // scale, w // scale], antialias=True)[0]
+    image = TF.resize(image[None], [h // scale, w // scale], antialias=True)[0]
     return Field(image, "ss")
 
 
-def euclidean(shape) -> Field:
+def euclidean(shape: tuple[int, ...]) -> Field:
     """Euclidean metric on a grid of the given shape."""
     n = len(shape)
     return Field(torch.eye(n).repeat(*shape, 1, 1), "s" * n + "ll")
 
 
 def structure_tensor(field: Field, sigma: float, connection: Field) -> Field:
-    gradient = covariant_derivative(field, connection)
-    return gaussian_blur(tensor_product(gradient, gradient), sigma)
+    """df ⊗ df, blurred."""
+    df = covariant_derivative(field, connection)
+    return gaussian_blur(tensor_product(df, df), sigma)
 
 
 def hessian(field: Field, connection: Field) -> Field:
-    second = covariant_derivative(covariant_derivative(field, connection), connection)
-    return Field((second.data + second.data.transpose(-1, -2)) / 2, second.type)
+    """nabla nabla f."""
+    return covariant_derivative(covariant_derivative(field, connection), connection)
 
 
 def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
@@ -63,9 +66,10 @@ def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
             scale=40, width=0.004
         )
 
+
 def show_gauge_derivative(ax, component, signature, quantile=0.99):
-    v = component.abs().quantile(quantile).item()
-    im = ax.imshow(component, cmap="RdBu_r", vmin=-v, vmax=v)
+    limit = component.abs().quantile(quantile).item()
+    im = ax.imshow(component, cmap="RdBu_r", vmin=-limit, vmax=limit)
     ax.set_title(f"signature {signature}", fontsize=10)
     bar = ax.figure.colorbar(im, ax=ax, shrink=0.5)
     bar.outline.set_visible(False)
@@ -82,7 +86,7 @@ def make_frame_figure(path: Path) -> None:
     )
 
     fig, axes = plt.subplots(1, 2, figsize=(8, 5))
-    fig.suptitle("Gauge frames obtained by taking eigenbasis of...", fontsize=11)
+    fig.suptitle("Gauge frames from eigenvectors", fontsize=11)
     for ax, (title, frame) in zip(axes, frames):
         ax.set_title(title, fontsize=10)
         show_gauge_frame(ax, blurred, frame, *CROP, STEP)
@@ -99,14 +103,14 @@ def make_derivative_figure(path: Path) -> None:
 
     fig, axes = plt.subplots(len(ORDERS), max(len(row) for row in ORDERS), figsize=(16, 13))
     derivative = blurred
-    for row, signatures in zip(axes, ORDERS):                # row i holds order i + 1
+    for row, signatures in zip(axes, ORDERS):  # row i holds order i + 1
         derivative = covariant_derivative(derivative, levi_civita)
         in_frame = change_basis(derivative, frame)
         for ax, signature in zip(row, signatures):
             show_gauge_derivative(ax, in_frame.data[..., *signature], signature)
         for ax in row[len(signatures):]:
             ax.set_axis_off()
-    fig.suptitle("first-, second- and third-order gauge derivatives", fontsize=13)
+    fig.suptitle("First-, second- and third-order gauge derivatives", fontsize=13)
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)

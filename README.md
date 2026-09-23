@@ -79,6 +79,8 @@ gauge.data[..., 0, 1, 1]  # signature [0, 1, 1]
 ```
 
 With a non-constant metric the same code computes covariant derivatives in that geometry.
+`covariant_derivative` takes any connection, with torsion or not; `connection` builds the
+Levi-Civita one.
 
 ## Gauge frame
 

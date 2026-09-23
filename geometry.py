@@ -4,7 +4,9 @@ from field import Field
 
 
 def partial_derivative(field: Field) -> Field:
-    """Partial derivatives along the grid by central differences, one grid step per unit.
+    """Partial derivatives along the grid, one grid step per unit.
+
+    Central differences, one-sided at the boundary.
 
     Args:
         field: Field of type BSI.
@@ -20,7 +22,7 @@ def partial_derivative(field: Field) -> Field:
 
 
 def connection(metric: Field) -> Field:
-    """Levi-Civita connection components of a metric.
+    """Levi-Civita connection components of a metric, the torsion-free metric connection.
 
     G^a_bc = 1/2 g^ad (d_b g_dc + d_c g_db - d_d g_bc), with [..., a, b, c] = G^a_bc.
 
@@ -34,10 +36,10 @@ def connection(metric: Field) -> Field:
     """
     if metric.indices_type != "ll":
         raise ValueError(f"a metric has two lower indices, got {metric.indices_type!r}")
-    derivative = partial_derivative(metric).data # [..., i, j, k] is d_k g_ij
-    term = (derivative.transpose(-1, -2)         # d_b g_dc
-            + derivative                         # d_c g_db
-            - derivative.movedim(-1, -3))        # d_d g_bc
+    derivative = partial_derivative(metric).data  # [..., i, j, k] is d_k g_ij
+    term = (derivative.transpose(-1, -2)          # d_b g_dc
+            + derivative                          # d_c g_db
+            - derivative.movedim(-1, -3))         # d_d g_bc
     inverse = torch.linalg.inv(metric.data)
     data = 0.5 * torch.einsum("...ad,...dbc->...abc", inverse, term)
     type = metric.prefix_type + "ull"
@@ -69,12 +71,12 @@ def covariant_derivative(field: Field, connection: Field) -> Field:
                 connection.data, [..., i, p, p + 1],
                 field.data, [..., *labels],
                 [..., *range(p + 1)]
-            ) # + G^a_zm T^..m..
+            )  # + G^a_zm T^..m..
         else:
             data -= torch.einsum(
                 connection.data, [..., p + 1, p, i],
                 field.data, [..., *labels],
                 [..., *range(p + 1)]
-            ) # - G^m_za T_..m..
+            )  # - G^m_za T_..m..
     type = field.type + "l"
     return Field(data, type)

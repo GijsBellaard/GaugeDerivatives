@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import torch
 
+
 @dataclass(frozen=True)
 class Field:
     """Tensor field on a grid.
