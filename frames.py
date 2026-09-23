@@ -1,52 +1,75 @@
 import torch
 
-from derivative import grad, hessian
-from gaussian_blur import gaussian_blur
-from utils import normalize_dims
+from field import Field
 
 
-def gauge_frame_hessian(
-    field: torch.Tensor,
-    dims: list[int] = None,
-) -> torch.Tensor:
-    """Compute the local gauge frame of field, the eigenvectors of its Hessian.
-    Define n = len(dims).
+def _whiten(form: Field, metric: Field) -> tuple[torch.Tensor, torch.Tensor]:
+    """Change to a basis that is orthonormal in g.
 
-    Args:
-        field: Tensor of arbitrary shape [...].
-        dims: List containing the indices of the spatial dimensions of field, defaults to all dimensions.
+    The functions below look for stationary points of F(v, v), |F(v, .)|^2 and |F(., v)|^2
+    subject to g(v, v) = 1. For g = I these are eigh and svd: subject to |w| = 1, w^T A w is
+    stationary at the eigenvectors of (A + A^T)/2, and |A^T w|^2 and |A w|^2 at the left
+    and right singular vectors of A.
 
-    Returns:
-        Tensor of shape [..., n, n] with 2 additional dimensions of size n
-        containing the n n-dimensional eigenvectors of the Hessian of field. 
-        The [..., :, i] is the i-th frame vector.
-    """
-    H = hessian(field, dims=dims)
-    H = (H + H.transpose(-2, -1)) / 2  # Force H symmetric (just in case)
-    eigenvalues, eigenvectors = torch.linalg.eigh(H)
-    return eigenvectors
-
-def gauge_frame_structure_tensor(
-    field: torch.Tensor,
-    sigma: float,
-    dims: list[int] = None,
-) -> torch.Tensor:
-    """Compute the local gauge frame of field, the eigenvectors of its structure tensor.
-    Define n = len(dims).
-    
-    Args:
-        field: Tensor of arbitrary shape [...].
-        sigma: Standard deviation for the post blur
-        dims: List containing the indices of the spatial dimensions of field, defaults to all dimensions.
+    For general g, factor g = L L^T. The columns of E = L^-T are orthonormal in g,
+    E^T g E = I, so substituting v = E w turns g(v, v) = 1 into |w| = 1 and F into
+    A = E^T F E. Solve for w, then v = E w.
 
     Returns:
-        Tensor of shape [..., n, n] with 2 additional dimensions of size n
-        containing the n n-dimensional eigenvectors of the structure tensor of field.
-        The [..., :, i] is the i-th frame vector.
+        E and A = E^T F E.
     """
-    dims = normalize_dims(field, dims)
-    G = grad(field, dims=dims)
-    G2 = G[..., :, None] @ G[..., None, :]
-    G2 = gaussian_blur(G2, sigma=sigma, dims=dims)
-    eigenvalues, eigenvectors = torch.linalg.eigh(G2)
-    return eigenvectors
+    if form.indices_type != "ll" or metric.indices_type != "ll":
+        raise ValueError(f"expected two lower indices, got {form.indices_type!r} "
+                         f"and {metric.indices_type!r}")
+    g = torch.broadcast_to(metric.data, form.data.shape)
+    basis = torch.linalg.inv(torch.linalg.cholesky(g)).mT
+    return basis, basis.mT @ form.data @ basis
+
+
+def eigenframe(form: Field, metric: Field) -> tuple[Field, Field]:
+    """Stationary points of F(v, v) subject to g(v, v) = 1.
+
+    Only the symmetric part of F contributes, so this solves (F + F^T)/2 v = lambda g v.
+
+    Args:
+        form: Field of type BSll, e.g. a Hessian or structure tensor.
+        metric: Metric of type Sll.
+
+    Returns:
+        Values F(v_i, v_i) of type BSl, ascending, and frame of type BSul, where
+        [..., :, i] is v_i.
+    """
+    # Solve in a g-orthonormal basis E, then map back with v = E w.
+    basis, F = _whiten(form, metric)
+    values, w = torch.linalg.eigh((F + F.mT) / 2)
+    frame = basis @ w
+    values_type = form.prefix_type + "l"
+    frame_type = form.prefix_type + "ul"
+    return Field(values, values_type), Field(frame, frame_type)
+
+
+def singular_frames(form: Field, metric: Field) -> tuple[Field, Field, Field]:
+    """Singular value decomposition of F with respect to g.
+
+    The left frame u holds the stationary points of |F(u, .)|^2 and the right frame v those
+    of |F(., v)|^2, both subject to unit length in g and the norm taken with g^-1. They
+    solve F g^-1 F^T u = sigma^2 g u and F^T g^-1 F v = sigma^2 g v, and are paired so that
+    F(u_i, v_j) = sigma_i delta_ij.
+
+    Args:
+        form: Field of type BSll, e.g. a Hessian or structure tensor.
+        metric: Metric of type Sll.
+
+    Returns:
+        Singular values sigma of type BSl, ascending, and the left and right frames of type
+        BSul, where [..., :, i] is u_i and v_i.
+    """
+    # Solve in a g-orthonormal basis E, then map back with v = E w.
+    basis, F = _whiten(form, metric)
+    u, sigma, vh = torch.linalg.svd(F)
+    sigma = sigma.flip(-1)
+    left = basis @ u.flip(-1)
+    right = basis @ vh.mT.flip(-1)
+    values_type = form.prefix_type + "l"
+    frame_type = form.prefix_type + "ul"
+    return Field(sigma, values_type), Field(left, frame_type), Field(right, frame_type)

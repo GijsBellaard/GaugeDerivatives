@@ -6,17 +6,18 @@ import torch
 import torchvision
 from PIL import Image
 
-from derivative import gauge_derivative
-from frames import gauge_frame_hessian, gauge_frame_structure_tensor
+from field import Field, change_basis, tensor_product
+from frames import eigenframe
 from gaussian_blur import gaussian_blur
+from geometry import connection, covariant_derivative
 
 IMAGES = Path(__file__).parent / "images"
 
-SIGMA = 2.0                 # Pre blur applied to the photograph, as in main.ipynb
+SIGMA = 2.0                 # Blur of the photograph
 FRAME_SIGMA = 1.0           # Post blur of the structure tensor
-CROP = (120, 350, 160, 360) # Region of the photograph the frame figure zooms in on
+CROP = (120, 350, 160, 360) # Region shown in the frame figure
 STEP = 8                    # Draw a frame every STEP-th pixel
-DERIVATIVE_SCALE = 2        # The derivative figure uses a photograph this many times smaller
+DERIVATIVE_SCALE = 2        # Downsampling of the photograph for the derivative figure
 
 FRAME_COLORS = ("#2a78d6", "#eb6834")
 ORDERS = [
@@ -25,18 +26,35 @@ ORDERS = [
     ([0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 1]),
 ]
 
-def load_image(scale: int = 1) -> torch.Tensor:
+def load_image(scale: int = 1) -> Field:
     with cbook.get_sample_data("grace_hopper.jpg") as f:
         image = torchvision.transforms.functional.pil_to_tensor(Image.open(f).convert("L"))[0] / 255
     h, w = image.shape
-    return torchvision.transforms.functional.resize(image[None], [h // scale, w // scale], antialias=True)[0]
+    image = torchvision.transforms.functional.resize(image[None], [h // scale, w // scale], antialias=True)[0]
+    return Field(image, "ss")
+
+
+def euclidean(shape) -> Field:
+    """Euclidean metric on a grid of the given shape."""
+    n = len(shape)
+    return Field(torch.eye(n).repeat(*shape, 1, 1), "s" * n + "ll")
+
+
+def structure_tensor(field: Field, sigma: float, connection: Field) -> Field:
+    gradient = covariant_derivative(field, connection)
+    return gaussian_blur(tensor_product(gradient, gradient), sigma)
+
+
+def hessian(field: Field, connection: Field) -> Field:
+    second = covariant_derivative(covariant_derivative(field, connection), connection)
+    return Field((second.data + second.data.transpose(-1, -2)) / 2, second.type)
 
 
 def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
-    ax.imshow(image[r0:r1, c0:c1], cmap="gray", extent=(c0, c1, r1, r0))
+    ax.imshow(image.data[r0:r1, c0:c1], cmap="gray", extent=(c0, c1, r1, r0))
     ys, xs = torch.meshgrid(torch.arange(r0, r1, step), torch.arange(c0, c1, step), indexing="ij")
     for i, color in enumerate(FRAME_COLORS):
-        v = frame[r0:r1:step, c0:c1:step, :, i]
+        v = frame.data[r0:r1:step, c0:c1:step, :, i]
         ax.quiver(
             xs, ys,
             v[..., 1], v[..., 0],
@@ -45,10 +63,9 @@ def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
             scale=40, width=0.004
         )
 
-def show_gauge_derivative(ax, image, frame, signature, quantile=0.99):
-    field = gauge_derivative(image, frame, signature)
-    v = field.abs().quantile(quantile).item()
-    im = ax.imshow(field, cmap="RdBu_r", vmin=-v, vmax=v)
+def show_gauge_derivative(ax, component, signature, quantile=0.99):
+    v = component.abs().quantile(quantile).item()
+    im = ax.imshow(component, cmap="RdBu_r", vmin=-v, vmax=v)
     ax.set_title(f"signature {signature}", fontsize=10)
     bar = ax.figure.colorbar(im, ax=ax, shrink=0.5)
     bar.outline.set_visible(False)
@@ -56,9 +73,12 @@ def show_gauge_derivative(ax, image, frame, signature, quantile=0.99):
 
 def make_frame_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image(), sigma=SIGMA)
+    metric = euclidean(blurred.data.shape)
+    levi_civita = connection(metric)
     frames = (
-        ("Structure tensor", gauge_frame_structure_tensor(blurred, sigma=FRAME_SIGMA)),
-        ("Hessian", gauge_frame_hessian(blurred))
+        ("Structure tensor",
+         eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)[1]),
+        ("Hessian", eigenframe(hessian(blurred, levi_civita), metric)[1])
     )
 
     fig, axes = plt.subplots(1, 2, figsize=(8, 5))
@@ -73,12 +93,17 @@ def make_frame_figure(path: Path) -> None:
 
 def make_derivative_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image(DERIVATIVE_SCALE), sigma=SIGMA / DERIVATIVE_SCALE)
-    frame = gauge_frame_structure_tensor(blurred, sigma=FRAME_SIGMA)
+    metric = euclidean(blurred.data.shape)
+    levi_civita = connection(metric)
+    _, frame = eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)
 
     fig, axes = plt.subplots(len(ORDERS), max(len(row) for row in ORDERS), figsize=(16, 13))
-    for row, signatures in zip(axes, ORDERS):
+    derivative = blurred
+    for row, signatures in zip(axes, ORDERS):                # row i holds order i + 1
+        derivative = covariant_derivative(derivative, levi_civita)
+        in_frame = change_basis(derivative, frame)
         for ax, signature in zip(row, signatures):
-            show_gauge_derivative(ax, blurred, frame, signature)
+            show_gauge_derivative(ax, in_frame.data[..., *signature], signature)
         for ax in row[len(signatures):]:
             ax.set_axis_off()
     fig.suptitle("first-, second- and third-order gauge derivatives", fontsize=13)
