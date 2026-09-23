@@ -33,10 +33,11 @@ def eigenframe(form: Field, metric: Field) -> tuple[Field, Field]:
 
     Args:
         form: Field of type `BSll`.
-        metric: Metric of type `Sll`.
+        metric: Metric of type `Sll` in the same basis as form.
 
     Returns:
-        Values of type `BSl`, ascending, and frame of type `BSul`, where [..., :, i] is v_i.
+        Values of type `BSl`, ascending, and frame of type `BSul` in that basis, where
+        [..., :, i] is v_i.
     """
     # Solve in a g-orthonormal basis E, then map back with v = E w.
     basis, F = _whiten(form, metric)
@@ -56,11 +57,11 @@ def singular_frames(form: Field, metric: Field) -> tuple[Field, Field, Field]:
 
     Args:
         form: Field of type `BSll`.
-        metric: Metric of type `Sll`.
+        metric: Metric of type `Sll` in the same basis as form.
 
     Returns:
         Singular values σ of type `BSl`, ascending, and the left and right frames of type
-        `BSul`, where [..., :, i] is u_i and v_i.
+        `BSul` in that basis, where [..., :, i] is u_i and v_i.
     """
     # Solve in a g-orthonormal basis E, then map back with v = E w.
     basis, F = _whiten(form, metric)

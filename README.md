@@ -33,7 +33,11 @@ Batch dimensions come first, then spatial, then indices, with upper and lower in
 order. 
 The number of `s`'s in the type is called `n` and is the number of spatial dimensions.
 Every index has size `n`.
-For example, a Field with shape `[B,H,W,2,2]` and type `"bssul"` is a batch of (1,1)-tensor fields on a 2D `H x W` grid . 
+
+Indices are components in the grid basis unless converted with `change_basis`, and the
+type string does not record which. `partial_derivative`, `covariant_derivative`,
+`levi_civita_difference_tensor` and `gaussian_blur` need every index in the grid basis.
+`contract` and `trace` need the two summed indices in the same basis.
 
 ### Common fields
 
@@ -49,7 +53,7 @@ On a 2D grid of `H×W` points, with a batch of `B`:
 | `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ab` |
 | `[H,W,2,2]` | `ssul` | (1,1)-tensor field | frame `F^a_i`, linear mappings `A^a_b` |
 | `[H,W,2,…,2]` | `ssl…l` | k lower indices | k-th covariant derivative of `f` |
-| `[H,W,2,2,2]` | `ssull` | connection | difference tensor `D = ∇ − ∇^flat` from the grid's flat connection, i.e. the Christoffel symbols |
+| `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field  | difference tensor `D = ∇ − ∇^flat` from the grid's flat connection `∇^flat` |
 
 ## Example
 
@@ -92,7 +96,7 @@ gauge.data[..., 0, 1, 1]  # signature [0, 1, 1]
 | `tensor_product(a, b)` | `a: BSI`, `b: BSJ` | `BSIJ` | `a ⊗ b` |
 | `contract(a, i, b, j)` | `a: BSI`, `b: BSJ` | `BSIJ` without the pair | sum of index `i` of `a` with index `j` of `b` |
 | `trace(field, i, j)` | `field: BSI` | `BSI` without the pair | sum of indices `i` and `j` of `field` |
-| `change_basis(field, frame, index)` | `field: BSI`, `frame: BSul` | `BSI` | index `index` expressed in the frame |
+| `change_basis(field, frame, index)` | `field: BSI`, `frame: BSul` | `BSI` | index `index` from the grid basis to the frame |
 
 ### `geometry.py`
 

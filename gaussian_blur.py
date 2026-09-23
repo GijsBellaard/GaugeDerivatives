@@ -9,7 +9,7 @@ def gaussian_blur(field: Field, sigma: float) -> Field:
     Boundaries are periodic, so values within a few sigma of the edge are wrong.
 
     Args:
-        field: Field of type `BSI`.
+        field: Field of type `BSI` in the grid basis.
         sigma: Standard deviation in grid steps.
 
     Returns:

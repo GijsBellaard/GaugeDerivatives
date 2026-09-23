@@ -10,8 +10,9 @@ class Field:
     `type` has one character per dimension of `data`: `b` batch, `s` spatial, `u` upper
     index, `l` lower index. Batch dimensions come first, then spatial, then indices, with
     upper and lower in any order. n is the number of spatial dimensions and every index has
-    size n. The indices are components some basis e_a and its dual e^a. Keeping track of 
-    which indices are in which frame is up to the caller.
+    size n. The indices are components in a basis: the grid basis e_a and its dual e^a,
+    unless converted with change_basis. Keeping track of which indices are in which basis
+    is up to the caller.
 
     In docstrings, `B` is any number of batch dimensions, `S` the spatial dimensions, and
     `I`, `J` any string of `u` and `l`. E.g. `BSIl` is a field of type `BSI` with a lower
@@ -94,7 +95,7 @@ def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
         a: Field of type `BSI`.
         index_a: Position of the contracted index in `I`.
         b: Field of type `BSJ`.
-        index_b: Position of the contracted index in `J`.
+        index_b: Position of the contracted index in `J`, in the same basis as index_a.
 
     Returns:
         Field of type `BSIJ` without the contracted pair.
@@ -122,7 +123,7 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
     Args:
         field: Field of type `BSI`.
         index_i: Position of the first index in `I`.
-        index_j: Position of the second index in `I`.
+        index_j: Position of the second index in `I`, in the same basis as index_i.
 
     Returns:
         Field of type `BSI` without the two indices.
@@ -144,15 +145,15 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
 def change_basis(field: Field, frame: Field, index: int) -> Field:
     """Express one index of a field in a frame F_i = F^a_i e_a.
 
-    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a. 
+    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a.
 
     Args:
         field: Field of type `BSI`.
         frame: Frame of type `BSul`, where [..., :, i] is the i-th frame vector.
-        index: Position of the index in `I`.
+        index: Position of the index in `I`, in the same basis as the frame's components.
 
     Returns:
-        Field of type `BSI` with the index in the given frame
+        Field of type `BSI` with the index in the given frame.
     """
     if frame.indices_type != "ul":
         raise ValueError(f"a frame has an upper and a lower index, got {frame.indices_type!r}")
