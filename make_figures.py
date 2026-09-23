@@ -105,7 +105,9 @@ def make_derivative_figure(path: Path) -> None:
     derivative = blurred
     for row, signatures in zip(axes, ORDERS):  # row i holds order i + 1
         derivative = covariant_derivative(derivative, levi_civita)
-        in_frame = change_basis(derivative, frame)
+        in_frame = derivative
+        for index in range(len(derivative.indices_type)):
+            in_frame = change_basis(in_frame, frame, index)
         for ax, signature in zip(row, signatures):
             show_gauge_derivative(ax, in_frame.data[..., *signature], signature)
         for ax in row[len(signatures):]:

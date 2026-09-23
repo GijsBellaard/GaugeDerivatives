@@ -72,7 +72,9 @@ eigenvalues, frame = eigenframe(gaussian_blur(outer, sigma=1.0), metric)  # "ssl
 third = field
 for _ in range(3):
     third = covariant_derivative(third, connection)  # "sslll"
-gauge = change_basis(third, frame)  # "sslll", indices in the frame
+gauge = third
+for index in range(3):
+    gauge = change_basis(gauge, frame, index)  # "sslll", indices in the frame
 gauge.data[..., 0, 1, 1]  # signature [0, 1, 1]
 ```
 
@@ -90,7 +92,7 @@ gauge.data[..., 0, 1, 1]  # signature [0, 1, 1]
 | `tensor_product(a, b)` | `a: BSI`, `b: BSJ` | `BSIJ` | `a ⊗ b` |
 | `contract(a, i, b, j)` | `a: BSI`, `b: BSJ` | `BSIJ` without the pair | sum of index `i` of `a` with index `j` of `b` |
 | `trace(field, i, j)` | `field: BSI` | `BSI` without the pair | sum of indices `i` and `j` of `field` |
-| `change_basis(field, frame)` | `field: BSI`, `frame: BSul` | `BSI` | every index expressed in the frame |
+| `change_basis(field, frame, index)` | `field: BSI`, `frame: BSul` | `BSI` | index `index` expressed in the frame |
 
 ### `geometry.py`
 

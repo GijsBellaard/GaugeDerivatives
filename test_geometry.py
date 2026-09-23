@@ -109,7 +109,7 @@ orthonormal = torch.einsum("...ai,...aj->...ij", frame.data, frame.data)
 error = (orthonormal - torch.eye(2)).abs().max()
 check("frame is orthonormal in g", error < 1e-10, f"{error:.2e}")
 
-first = change_basis(df, frame)
+first = change_basis(df, frame, 0)
 along = torch.einsum("...a,...a->...", df.data, frame.data[..., 0])
 error = (first.data[..., 0] - along).abs().max()
 check("first order gauge derivative = df(frame vector)", error < 1e-14, f"{error:.2e}")
@@ -117,7 +117,7 @@ check("first order gauge derivative = df(frame vector)", error < 1e-14, f"{error
 skewed = Field(frame.data + 0.5 * frame.data.flip(-1), "ssul")    # not orthonormal
 covector, vector = Field(torch.randn(64, 80, 2), "ssl"), Field(torch.randn(64, 80, 2), "ssu")
 before = contract(covector, 0, vector, 0).data
-after = contract(change_basis(covector, skewed), 0, change_basis(vector, skewed), 0).data
+after = contract(change_basis(covector, skewed, 0), 0, change_basis(vector, skewed, 0), 0).data
 error = (before - after).abs().max()
 check("change of basis leaves contractions unchanged", error < 1e-12, f"{error:.2e}")
 

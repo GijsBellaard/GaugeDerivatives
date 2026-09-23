@@ -140,24 +140,41 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
     return Field(data, type)
 
 
-def change_basis(field: Field, frame: Field) -> Field:
-    """Express every index of a field in a frame.
+def change_basis(field: Field, frame: Field, index: int) -> Field:
+    """Express one index of a field in a frame, leaving the others as they are.
 
-    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a.
+    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a. The type
+    string does not record the basis, so keeping track of which indices are in which frame
+    is up to the caller.
 
     Args:
         field: Field of type BSI.
         frame: Frame of type BSul, where [..., :, i] is the i-th frame vector.
+        index: Position of the index in I.
 
     Returns:
-        Field of type BSI, with components in the frame.
+        Field of type BSI, with that index in the frame.
     """
-    inverse = Field(torch.linalg.inv(frame.data), frame.type)
-    # Each contraction removes index 0 and appends it in the frame, so after one pass over
-    # the indices they are all converted and back in their original order.
-    for kind in field.indices_type:
-        if kind == "l":
-            field = contract(field, 0, frame, 0)
-        else:
-            field = contract(field, 0, inverse, 1)
-    return field
+    if frame.indices_type != "ul":
+        raise ValueError(f"a frame has an upper and a lower index, got {frame.indices_type!r}")
+
+    # The index is summed with the frame over the spare label p, and the frame hands back
+    # its frame index at the same position.
+    p = len(field.indices_type)
+    labels = list(range(p))
+    labels[index] = p
+    if field.indices_type[index] == "l":
+        data = torch.einsum(
+            field.data, [..., *labels], 
+            frame.data, [..., p, index],
+            [..., *range(p)]
+        )
+    else:
+        inverse = torch.linalg.inv(frame.data)
+        data = torch.einsum(
+            inverse, [..., index, p], 
+            field.data, [..., *labels],
+            [..., *range(p)]
+        )
+    type = max(field.prefix_type, frame.prefix_type, key=len) + field.indices_type
+    return Field(data, type)
