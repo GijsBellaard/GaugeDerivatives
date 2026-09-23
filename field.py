@@ -5,16 +5,17 @@ import torch
 
 @dataclass(frozen=True)
 class Field:
-    """Tensor field on a grid.
+    """Tensor field on a grid, stored as its components and a type string.
 
-    `type` has one character per dimension of `data`: 'b' batch, 's' spatial, 'u' upper
-    index, 'l' lower index. Batch dimensions come first, then spatial, then indices, with
-    upper and lower in any order. E.g. "bssul" is a batch of (1,1)-tensor fields on a 2D
-    grid. n is the number of spatial dimensions and every index has size n. All fields in
-    a computation live on the same grid.
+    `type` has one character per dimension of `data`: `b` batch, `s` spatial, `u` upper
+    index, `l` lower index. Batch dimensions come first, then spatial, then indices, with
+    upper and lower in any order. n is the number of spatial dimensions and every index has
+    size n. The indices are components some basis e_a and its dual e^a. Keeping track of 
+    which indices are in which frame is up to the caller.
 
-    In docstrings, B is any number of batch dimensions, S the spatial dimensions, and I, J
-    any string of 'u' and 'l'. E.g. BSIl is a field of type BSI with a lower index appended.
+    In docstrings, `B` is any number of batch dimensions, `S` the spatial dimensions, and
+    `I`, `J` any string of `u` and `l`. E.g. `BSIl` is a field of type `BSI` with a lower
+    index appended.
     """
     data: torch.Tensor
     type: str
@@ -46,12 +47,12 @@ class Field:
 
     @property
     def indices_type(self) -> str:
-        """Index characters of type, e.g. "ul"."""
+        """Index characters of type, e.g. `ul`."""
         return "".join(c for c in self.type if c in "ul")
 
     @property
     def prefix_type(self) -> str:
-        """Batch and spatial characters of type, e.g. "bss"."""
+        """Batch and spatial characters of type, e.g. `bss`."""
         return "".join(c for c in self.type if c in "bs")
 
     @property
@@ -66,14 +67,14 @@ class Field:
 
 
 def tensor_product(a: Field, b: Field) -> Field:
-    """Tensor product a ⊗ b.
+    """Tensor product a ⊗ b, with (a ⊗ b)[..., I, J] = a[..., I] b[..., J].
 
     Args:
-        a: Field of type BSI.
-        b: Field of type BSJ.
+        a: Field of type `BSI`.
+        b: Field of type `BSJ`.
 
     Returns:
-        Field of type BSIJ.
+        Field of type `BSIJ`.
     """
     if a.n != b.n:
         raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
@@ -87,16 +88,16 @@ def tensor_product(a: Field, b: Field) -> Field:
 
 
 def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
-    """Contract an index of a with an index of b. One must be upper, the other lower.
+    """Contract an index of a with an index of b, one upper and one lower.
 
     Args:
-        a: Field of type BSI.
-        index_a: Position of the contracted index in I.
-        b: Field of type BSJ.
-        index_b: Position of the contracted index in J.
+        a: Field of type `BSI`.
+        index_a: Position of the contracted index in `I`.
+        b: Field of type `BSJ`.
+        index_b: Position of the contracted index in `J`.
 
     Returns:
-        Field of type BSIJ without the contracted pair.
+        Field of type `BSIJ` without the contracted pair.
     """
     if a.n != b.n:
         raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
@@ -116,15 +117,15 @@ def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
 
 
 def trace(field: Field, index_i: int, index_j: int) -> Field:
-    """Contract two indices of a field. One must be upper, the other lower.
+    """Contract two indices of a field, one upper and one lower: T^m_m.
 
     Args:
-        field: Field of type BSI.
-        index_i: Position of the first index in I.
-        index_j: Position of the second index in I.
+        field: Field of type `BSI`.
+        index_i: Position of the first index in `I`.
+        index_j: Position of the second index in `I`.
 
     Returns:
-        Field of type BSI without the two indices.
+        Field of type `BSI` without the two indices.
     """
     if field.indices_type[index_i] == field.indices_type[index_j]:
         raise ValueError(f"indices {index_i} and {index_j} of {field.type!r} "
@@ -141,19 +142,17 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
 
 
 def change_basis(field: Field, frame: Field, index: int) -> Field:
-    """Express one index of a field in a frame, leaving the others as they are.
+    """Express one index of a field in a frame F_i = F^a_i e_a.
 
-    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a. The type
-    string does not record the basis, so keeping track of which indices are in which frame
-    is up to the caller.
+    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a. 
 
     Args:
-        field: Field of type BSI.
-        frame: Frame of type BSul, where [..., :, i] is the i-th frame vector.
-        index: Position of the index in I.
+        field: Field of type `BSI`.
+        frame: Frame of type `BSul`, where [..., :, i] is the i-th frame vector.
+        index: Position of the index in `I`.
 
     Returns:
-        Field of type BSI, with that index in the frame.
+        Field of type `BSI` with the index in the given frame
     """
     if frame.indices_type != "ul":
         raise ValueError(f"a frame has an upper and a lower index, got {frame.indices_type!r}")

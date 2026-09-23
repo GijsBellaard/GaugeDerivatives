@@ -27,17 +27,16 @@ def _whiten(form: Field, metric: Field) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def eigenframe(form: Field, metric: Field) -> tuple[Field, Field]:
-    """Stationary points of F(v, v) subject to g(v, v) = 1.
+    """Directions v where F(v, v) is stationary subject to g(v, v) = 1.
 
-    Only the symmetric part of F contributes, so this solves (F + F^T)/2 v = lambda g v.
+    Solves (F + F^T)/2 v = λ g v, with values λ = F(v, v).
 
     Args:
-        form: Field of type BSll, e.g. a Hessian or structure tensor.
-        metric: Metric of type Sll.
+        form: Field of type `BSll`.
+        metric: Metric of type `Sll`.
 
     Returns:
-        Values F(v_i, v_i) of type BSl, ascending, and frame of type BSul, where
-        [..., :, i] is v_i.
+        Values of type `BSl`, ascending, and frame of type `BSul`, where [..., :, i] is v_i.
     """
     # Solve in a g-orthonormal basis E, then map back with v = E w.
     basis, F = _whiten(form, metric)
@@ -51,22 +50,17 @@ def eigenframe(form: Field, metric: Field) -> tuple[Field, Field]:
 def singular_frames(form: Field, metric: Field) -> tuple[Field, Field, Field]:
     """Singular value decomposition of F with respect to g.
 
-    The left frame u holds the stationary points of |F(u, .)|^2 and the right frame v those
-    of |F(., v)|^2, both subject to unit length in g and the norm taken with g^-1. They
-    solve F g^-1 F^T u = sigma^2 g u and F^T g^-1 F v = sigma^2 g v, and are paired so that
-    F(u_i, v_j) = sigma_i delta_ij.
-
-    For a symmetric F both frames are those of eigenframe, so this is meant for a
-    non-symmetric F, such as a Hessian under a connection with torsion or the covariant
-    derivative of a covector field.
+    The left frame u and right frame v hold the stationary points of |F(u, .)|^2 and
+    |F(., v)|^2 subject to unit length in g, paired so that F(u_i, v_j) = σ_i δ_ij. Only
+    differs from eigenframe for a non-symmetric F.
 
     Args:
-        form: Field of type BSll.
-        metric: Metric of type Sll.
+        form: Field of type `BSll`.
+        metric: Metric of type `Sll`.
 
     Returns:
-        Singular values sigma of type BSl, ascending, and the left and right frames of type
-        BSul, where [..., :, i] is u_i and v_i.
+        Singular values σ of type `BSl`, ascending, and the left and right frames of type
+        `BSul`, where [..., :, i] is u_i and v_i.
     """
     # Solve in a g-orthonormal basis E, then map back with v = E w.
     basis, F = _whiten(form, metric)

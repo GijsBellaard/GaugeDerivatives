@@ -49,7 +49,7 @@ On a 2D grid of `H×W` points, with a batch of `B`:
 | `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ab` |
 | `[H,W,2,2]` | `ssul` | (1,1)-tensor field | frame `F^a_i`, linear mappings `A^a_b` |
 | `[H,W,2,…,2]` | `ssl…l` | k lower indices | k-th covariant derivative of `f` |
-| `[H,W,2,2,2]` | `ssull` | connection components | Christoffel symbols `Γ^a_bc` of a Levi-Civita connection |
+| `[H,W,2,2,2]` | `ssull` | connection | difference tensor `D = ∇ − ∇^flat` from the grid's flat connection, i.e. the Christoffel symbols |
 
 ## Example
 
@@ -58,20 +58,20 @@ import torch
 from field import Field, change_basis, tensor_product
 from frames import eigenframe
 from gaussian_blur import gaussian_blur
-from geometry import covariant_derivative, levi_civita_connection
+from geometry import covariant_derivative, levi_civita_difference_tensor
 
 field = gaussian_blur(Field(torch.randn(64, 64), "ss"), sigma=2.0)
 
 metric = Field(torch.eye(2).repeat(64, 64, 1, 1), "ssll")  # Standard Euclidean metric
-connection = levi_civita_connection(metric)  # "ssull", zero in this case
+difference_tensor = levi_civita_difference_tensor(metric)  # "ssull", zero in this case
 
-df = covariant_derivative(field, connection)  # "ssl"
+df = covariant_derivative(field, difference_tensor)  # "ssl"
 outer = tensor_product(df, df)  # "ssll"
 eigenvalues, frame = eigenframe(gaussian_blur(outer, sigma=1.0), metric)  # "ssl", "ssul"
 
 third = field
 for _ in range(3):
-    third = covariant_derivative(third, connection)  # "sslll"
+    third = covariant_derivative(third, difference_tensor)  # "sslll"
 gauge = third
 for index in range(3):
     gauge = change_basis(gauge, frame, index)  # "sslll", indices in the frame
@@ -98,9 +98,9 @@ gauge.data[..., 0, 1, 1]  # signature [0, 1, 1]
 
 | function | takes | returns | computes |
 |----------|-------|---------|----------|
-| `partial_derivative(field)` | `field: BSI` | `BSIl` | `∂_z T` |
-| `levi_civita_connection(metric)` | `metric: Sll` | `Sull` | `Γ^a_bc` of the metric |
-| `covariant_derivative(field, connection)` | `field: BSI`, `connection: Sull` | `BSIl` | `∇_z T`, for any connection |
+| `partial_derivative(field)` | `field: BSI` | `BSIl` | `∇^flat_z T = ∂_z T` |
+| `levi_civita_difference_tensor(metric)` | `metric: Sll` | `Sull` | `D` of the Levi-Civita connection |
+| `covariant_derivative(field, difference_tensor)` | `field: BSI`, `difference_tensor: Sull` | `BSIl` | `∇_z T` with `∇ = ∇^flat + D`, for any connection |
 
 ### `frames.py`
 

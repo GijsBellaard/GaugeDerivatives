@@ -4,16 +4,16 @@ from field import Field
 
 
 def gaussian_blur(field: Field, sigma: float) -> Field:
-    """Isotropic Gaussian blur along the spatial dimensions, via FFT.
+    """Isotropic Gaussian blur of every component along the spatial dimensions, via FFT.
 
     Boundaries are periodic, so values within a few sigma of the edge are wrong.
 
     Args:
-        field: Field of type BSI.
+        field: Field of type `BSI`.
         sigma: Standard deviation in grid steps.
 
     Returns:
-        Blurred field of type BSI.
+        Blurred field of type `BSI`.
     """
     data = field.data
     dims = field.spatial_dims
