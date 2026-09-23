@@ -9,7 +9,7 @@ from PIL import Image
 from field import Field, change_basis, tensor_product
 from frames import eigenframe
 from gaussian_blur import gaussian_blur
-from geometry import levi_civita_difference_tensor, covariant_derivative
+from geometry import covariant_derivative, differential, levi_civita_difference_tensor
 
 IMAGES = Path(__file__).parent / "images"
 
@@ -42,15 +42,15 @@ def euclidean(shape: tuple[int, ...]) -> Field:
     return Field(torch.eye(n).repeat(*shape, 1, 1), "s" * n + "ll")
 
 
-def structure_tensor(field: Field, sigma: float, difference_tensor: Field) -> Field:
+def structure_tensor(field: Field, sigma: float) -> Field:
     """df ⊗ df, blurred."""
-    df = covariant_derivative(field, difference_tensor)
+    df = differential(field)
     return gaussian_blur(tensor_product(df, df), sigma)
 
 
 def hessian(field: Field, difference_tensor: Field) -> Field:
     """∇∇f."""
-    return covariant_derivative(covariant_derivative(field, difference_tensor), difference_tensor)
+    return covariant_derivative(differential(field), difference_tensor)
 
 
 def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
@@ -81,7 +81,7 @@ def make_frame_figure(path: Path) -> None:
     levi_civita = levi_civita_difference_tensor(metric)
     frames = (
         ("Structure tensor",
-         eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)[1]),
+         eigenframe(structure_tensor(blurred, FRAME_SIGMA), metric)[1]),
         ("Hessian", eigenframe(hessian(blurred, levi_civita), metric)[1])
     )
 
@@ -99,7 +99,7 @@ def make_derivative_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image(DERIVATIVE_SCALE), sigma=SIGMA / DERIVATIVE_SCALE)
     metric = euclidean(blurred.data.shape)
     levi_civita = levi_civita_difference_tensor(metric)
-    _, frame = eigenframe(structure_tensor(blurred, FRAME_SIGMA, levi_civita), metric)
+    _, frame = eigenframe(structure_tensor(blurred, FRAME_SIGMA), metric)
 
     fig, axes = plt.subplots(len(ORDERS), max(len(row) for row in ORDERS), figsize=(16, 13))
     derivative = blurred
