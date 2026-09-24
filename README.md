@@ -14,9 +14,7 @@ $$
 
 ## Gauge Derivatives on R2
 
-![gauge frame](images/gauge_frame.svg)
-
-![gauge derivatives](images/gauge_derivatives.svg)
+![gauge frame and derivatives on R2](images/r2.svg)
 
 ```python
 import torch
@@ -36,13 +34,7 @@ gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, differenc
 
 ## Gauge Derivatives on  M2
 
-![ribbon signal](images/ribbon_signal.png)
-
-![ribbon frame](images/ribbon_frame.png)
-
-![ribbon derivatives](images/ribbon_derivatives.png)
-
-![ribbon cross-section](images/ribbon_cross_section.svg)
+![gauge frame and derivatives on M2](images/m2.webp)
 
 ```python
 import torch
