@@ -107,8 +107,9 @@ def hessian_frame(field: Field, difference_tensor: Field, metric: Field) -> tupl
     return eigenframe(hessian, metric)
 
 
-def gauge_jet(field: Field, frame: Field, difference_tensor: Field, order: int) -> Field:
-    """Covariant derivative of the given order, with every index expressed in a frame.
+def covariant_derivative_in_frame(field: Field, frame: Field, difference_tensor: Field,
+                                  order: int) -> Field:
+    """Covariant derivative of the given order, in the frame basis.
 
     Args:
         field: Field of type `BSI` in the grid basis.
@@ -117,7 +118,7 @@ def gauge_jet(field: Field, frame: Field, difference_tensor: Field, order: int) 
         order: Number of covariant derivatives.
 
     Returns:
-        Field of type `BSI` followed by order many `l`, with every index in the frame.
+        Field of type `BSI` followed by order many `l`, in the frame basis.
     """
     for _ in range(order):
         field = covariant_derivative(field, difference_tensor)

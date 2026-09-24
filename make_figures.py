@@ -3,14 +3,17 @@ from pathlib import Path
 import matplotlib
 import matplotlib.cbook as cbook
 import matplotlib.pyplot as plt
-from matplotlib.colors import Colormap, LinearSegmentedColormap
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Colormap, LinearSegmentedColormap, Normalize
+import numpy as np
 import pyvista as pv
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
 from field import Field
-from frames import constant_metric_in_frame, gauge_jet, hessian_frame, structure_tensor_frame
+from frames import (constant_metric_in_frame, covariant_derivative_in_frame, hessian_frame,
+                    structure_tensor_frame)
 from gaussian_blur import gaussian_blur
 from geometry import levi_civita_difference_tensor, weitzenbock_difference_tensor
 from m2 import left_invariant_frame
@@ -40,11 +43,7 @@ THETA_TICKS = {0: "0", 0.5: "π/2", 1: "π", 1.5: "3π/2", 2: "2π"}  # θ / π 
 
 FRAME_COLORS = ("#2a78d6", "#eb6834")
 RIBBON_COLORS = (*FRAME_COLORS, "#3aa655")
-ORDERS = [
-    ([0], [1]),
-    ([0, 0], [0, 1], [1, 1]),
-    ([0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 1]),
-]
+RIBBON_DIRECTIONS = (1, 2)   # Across and through, as (δf)_0 along the ribbon is zero
 
 
 def load_image(scale: int = 1) -> Field:
@@ -102,10 +101,12 @@ def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
         )
 
 
-def show_gauge_derivative(ax, component, signature, quantile=0.99):
+def show_gauge_derivative(ax, component, title, cmap, quantile=0.99):
+    """Image of a gauge derivative, symmetric around 0 if it takes negative values."""
     limit = component.abs().quantile(quantile).item()
-    im = ax.imshow(component, cmap="RdBu_r", vmin=-limit, vmax=limit)
-    ax.set_title(f"signature {signature}", fontsize=10)
+    vmin = -limit if component.min() < 0 else 0
+    im = ax.imshow(component, cmap=cmap, vmin=vmin, vmax=limit)
+    ax.set_title(title, fontsize=12)
     bar = ax.figure.colorbar(im, ax=ax, shrink=0.5)
     bar.outline.set_visible(False)
 
@@ -135,14 +136,15 @@ def make_derivative_figure(path: Path) -> None:
     levi_civita = levi_civita_difference_tensor(metric)
     _, frame = structure_tensor_frame(blurred, FRAME_SIGMA, metric)
 
-    fig, axes = plt.subplots(len(ORDERS), max(len(row) for row in ORDERS), figsize=(16, 13))
-    for order, (row, signatures) in enumerate(zip(axes, ORDERS), start=1):
-        in_frame = gauge_jet(blurred, frame, levi_civita, order)
-        for ax, signature in zip(row, signatures):
-            show_gauge_derivative(ax, in_frame.data[..., *signature], signature)
-        for ax in row[len(signatures):]:
-            ax.set_axis_off()
-    fig.suptitle("First-, second- and third-order gauge derivatives", fontsize=13)
+    # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
+    first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1).data[..., 1].abs()
+    second = covariant_derivative_in_frame(blurred, frame, levi_civita, 2).data[..., 1, 1]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 6))
+    show_gauge_derivative(ax1, first, r"$|(\delta f)_1|$",
+                          derivative_cmap("first", FRAME_COLORS[1]))
+    show_gauge_derivative(ax2, second, r"$(\delta f)_{11}$", "RdBu_r")
+    fig.suptitle("Gauge derivatives", fontsize=13)
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
@@ -152,13 +154,12 @@ def ribbon() -> tuple[Field, Field, Field]:
     """Helical ribbon on its grid, its structure tensor frame and the Weitzenböck difference
     tensor.
 
-    With a blur as large as the ribbon, the frame is through, across and along it over its
+    With a blur as large as the ribbon, the frame is along, across and through it over its
     whole cross-section, unlike the Hessian frame, which is only ordered so near its core.
     """
     A = left_invariant_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates())
     _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
-    frame = Field(frame.data.flip(-1), frame.type)  # descending, so v_1 is through
     return f, frame, weitzenbock_difference_tensor(A)
 
 
@@ -220,7 +221,7 @@ def show_ribbon_axes(plotter: pv.Plotter) -> None:
               + [(0, -h - 2.5 * pad, 0), (h + 2.5 * pad, 0, 0), (-h, -h, top + 1.5 * pad)])
     labels = ([f"{t}".replace("-", "−") for t in 2 * SPACE_TICKS] + list(THETA_TICKS.values())
               + ["x", "y", "θ"])
-    plotter.add_point_labels(points, labels, font_file=str(FONT), font_size=18, bold=False,
+    plotter.add_point_labels(points, labels, font_file=str(FONT), font_size=24, bold=False,
                              text_color="black", show_points=False, shape=None,
                              always_visible=True)
     plotter.camera_position = [(75, -75, 55), (0, 0, XI * torch.pi), (0, 0, 1)]
@@ -232,23 +233,59 @@ def add_density(plotter: pv.Plotter, volume: pv.ImageData, name: str, limit: flo
                 cmap: str | Colormap = "magma", opacity: str | list = "linear") -> None:
     """Volume rendering of an array of volume, opacity from 0 to limit."""
     density = plotter.add_volume(volume, scalars=name, cmap=cmap, opacity=opacity,
-                                 clim=(0, limit), scalar_bar_args={"title": name, "n_labels": 3})
+                                 clim=(0, limit), show_scalar_bar=False)
     density.prop.interpolation_type = "linear"
 
 
+def ribbon_plotter() -> pv.Plotter:
+    return pv.Plotter(off_screen=True, window_size=(1400, 1100))
+
+
+def screenshots(*plotters: pv.Plotter, margin: int = 10) -> list[np.ndarray]:
+    """Screenshots of the plotters, which are closed, cropped alike to what is drawn."""
+    images = [plotter.screenshot(return_img=True) for plotter in plotters]
+    for plotter in plotters:
+        plotter.close()
+    drawn = np.any([(image < 250).any(-1) for image in images], axis=0)
+    rows, cols = np.nonzero(drawn.any(1))[0], np.nonzero(drawn.any(0))[0]
+    r0, c0 = max(rows[0] - margin, 0), max(cols[0] - margin, 0)
+    r1, c1 = rows[-1] + margin + 1, cols[-1] + margin + 1
+    return [image[r0:r1, c0:c1] for image in images]
+
+
+def show_rendering(ax, image: np.ndarray, title: str) -> None:
+    ax.imshow(image)
+    ax.set_title(title, fontsize=12)
+    ax.set_axis_off()
+
+
+def add_colorbar(ax, cmap: str | Colormap, limit: float) -> None:
+    bar = ax.figure.colorbar(ScalarMappable(Normalize(0, limit), cmap), ax=ax, shrink=0.5)
+    bar.outline.set_visible(False)
+
+
+def save(fig, path: Path) -> None:
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+
+
 def make_ribbon_signal_figure(path: Path, f: Field) -> None:
-    plotter = pv.Plotter(off_screen=True, window_size=(1400, 1100))
+    plotter = ribbon_plotter()
     add_density(plotter, ribbon_volume(f=f.data), "f", 1.0, opacity="sigmoid_8")
     show_ribbon_axes(plotter)
-    plotter.screenshot(path)
-    plotter.close()
+    [image] = screenshots(plotter)
+
+    fig, ax = plt.subplots(figsize=(7, 5.5))
+    show_rendering(ax, image, "Ribbon signal $f$ on M2")
+    add_colorbar(ax, "magma", 1.0)
+    save(fig, path)
 
 
 def make_ribbon_frame_figure(path: Path, f: Field, frame: Field) -> None:
     theta, y, x = ribbon_coordinates()
-    plotter = pv.Plotter(off_screen=True, window_size=(1400, 1100))
+    plotter = ribbon_plotter()
     add_density(plotter, ribbon_volume(f=f.data), "f", 1.0, cmap="Greys", opacity=[0, 0.2])
-    plotter.remove_scalar_bar()
     steps = torch.tensor([XI * 2 * torch.pi / ORIENTATIONS, SPACING, SPACING])  # of e_θ, e_y, e_x
     for k in range(MARGIN, ORIENTATIONS - MARGIN, THETA_STEP):
         # Grid point nearest to the core at t = θ - π/2
@@ -256,49 +293,57 @@ def make_ribbon_frame_figure(path: Path, f: Field, frame: Field) -> None:
         j = round(RADIUS * theta[k, 0, 0].sin().item() / SPACING + (SIZE - 1) / 2)
         point = torch.stack([x[k, i, j], y[k, i, j], XI * theta[k, i, j]])
         for n, color in enumerate(RIBBON_COLORS):
-            v = 3.5 * (frame.data[k, i, j, :, n] * steps).flip(0)  # (x, y, XI θ)
+            v = 2.0 * (frame.data[k, i, j, :, n] * steps).flip(0)  # (x, y, XI θ)
             tube = pv.Tube(pointa=(point - v).tolist(), pointb=(point + v).tolist(), radius=0.25)
             plotter.add_mesh(tube, color=color)
     show_ribbon_axes(plotter)
     plotter.enable_depth_peeling()
-    plotter.screenshot(path)
-    plotter.close()
+    [image] = screenshots(plotter)
+
+    fig, ax = plt.subplots(figsize=(6, 5.5))
+    show_rendering(ax, image, "Structure tensor frame")
+    save(fig, path)
 
 
 def ribbon_derivatives(f: Field, frame: Field,
-                       difference_tensor: Field) -> tuple[pv.ImageData, list[str], float]:
-    """Volume with f and the first gauge derivatives |v_i f|, their names and their maximum.
+                       difference_tensor: Field) -> tuple[pv.ImageData, dict[str, str], float]:
+    """Volume with f and the first gauge derivatives |(δf)_i| for i in RIBBON_DIRECTIONS,
+    their names with their colors, and their maximum.
 
-    The sign of each frame vector is arbitrary, hence |v_i f|.
+    The sign of each frame vector is arbitrary, hence |(δf)_i|.
     """
-    first = gauge_jet(f, frame, difference_tensor, 1).data.abs()
-    names = [f"\u2223v{chr(0x2080 + i + 1)}f\u2223" for i in range(3)]
-    volume = ribbon_volume(f=f.data, **{name: first[..., i] for i, name in enumerate(names)})
-    return volume, names, first.max().item()
+    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1).data.abs()
+    names = {rf"$|(\delta f)_{i}|$": i for i in RIBBON_DIRECTIONS}
+    volume = ribbon_volume(f=f.data, **{name: first[..., i] for name, i in names.items()})
+    colors = {name: RIBBON_COLORS[i] for name, i in names.items()}
+    return volume, colors, first[..., RIBBON_DIRECTIONS].max().item()
 
 
 def derivative_cmap(name: str, color: str) -> Colormap:
     return LinearSegmentedColormap.from_list(name, ["white", color, "black"])
 
 
-def make_ribbon_derivative_figure(path: Path, volume: pv.ImageData, names: list[str],
+def make_ribbon_derivative_figure(path: Path, volume: pv.ImageData, colors: dict[str, str],
                                   limit: float) -> None:
     outline = volume.contour([0.5], scalars="f")
-    plotter = pv.Plotter(off_screen=True, shape=(1, 3), window_size=(2700, 800), border=False)
-    for i, (name, color) in enumerate(zip(names, RIBBON_COLORS)):
-        plotter.subplot(0, i)
+    plotters = []
+    for name, color in colors.items():
+        plotter = ribbon_plotter()
         add_density(plotter, volume, name, limit, cmap=derivative_cmap(name, color))
         plotter.add_mesh(outline, color="#888888", opacity=0.12)
-        plotter.add_text(name, position="upper_edge", font_size=20, color="black",
-                         font_file=str(FONT))
         show_ribbon_axes(plotter)
-    for bar in plotter.scalar_bars.values():
-        bar.SetTitle("")  # the panel title says it
-    plotter.screenshot(path)
-    plotter.close()
+        plotters.append(plotter)
+    images = screenshots(*plotters)
+
+    fig, axes = plt.subplots(1, len(colors), figsize=(6.5 * len(colors), 4.4))
+    for ax, image, (name, color) in zip(axes, images, colors.items()):
+        show_rendering(ax, image, name)
+        add_colorbar(ax, derivative_cmap(name, color), limit)
+    fig.suptitle("Gauge derivatives", fontsize=13)
+    save(fig, path)
 
 
-def make_ribbon_cross_section_figure(path: Path, volume: pv.ImageData, names: list[str],
+def make_ribbon_cross_section_figure(path: Path, volume: pv.ImageData, colors: dict[str, str],
                                      limit: float) -> None:
     # Cross-section perpendicular to the core at θ = π, sampled in (x, y, XI θ) along the unit
     # vectors of ribbon_directions.
@@ -312,17 +357,18 @@ def make_ribbon_cross_section_figure(path: Path, volume: pv.ImageData, names: li
     points = center + across[..., None] * a2 + through[..., None] * n
     sampled = pv.PolyData(points.reshape(-1, 3).numpy()).sample(volume)
 
-    panels = [("f", "Greys", 1.0)] + [(name, derivative_cmap(name, color), limit)
-                                      for name, color in zip(names, RIBBON_COLORS)]
+    panels = [("f", "$f$", "Greys", 1.0)] + [(name, name, derivative_cmap(name, color), limit)
+                                             for name, color in colors.items()]
     fig, axes = plt.subplots(1, len(panels), figsize=(3 * len(panels), 3.2))
-    for ax, (name, cmap, top) in zip(axes, panels):
+    for ax, (name, title, cmap, top) in zip(axes, panels):
         ax.imshow(sampled[name].reshape(across.shape), origin="lower", cmap=cmap, vmin=0,
                   vmax=top, extent=(-extent, extent, -extent, extent))
-        ax.set_title(name, fontsize=12)
+        ax.set_title(title, fontsize=12)
         ax.set_xlabel("across")
         ax.set_xticks([])
         ax.set_yticks([])
     axes[0].set_ylabel("through")
+    fig.suptitle("Cross-section at θ = π", fontsize=13)
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)

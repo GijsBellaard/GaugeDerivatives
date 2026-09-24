@@ -6,42 +6,62 @@ A _field_ is a tensor-valued signal on a manifold.
 A _gauge frame_ is a basis of vector fields derived from a scalar field, e.g. from its structure tensor or Hessian.
 A _gauge derivative_ of a field is a derivative in a gauge frame direction.
 
-More formally, let $M$ be an $n$-dimensional manifold, $\nabla : \Gamma(T^{(p,q)}M) \to \Gamma(T^{(p,q+1)} M)$ the total covariant derivative on tensor fields (induced by some connection), and $v_1, \dots, v_n \in \Gamma(T M)$ a gauge frame obtained from a scalar field $f : M \to \mathbb{R}$.
+More formally, let $M$ be an $n$-dimensional manifold, $\nabla : \Gamma(T^{(p,q)}M) \to \Gamma(T^{(p,q+1)} M)$ the total covariant derivative on tensor fields (induced by some connection), and $v_0, \dots, v_{n-1} \in \Gamma(T M)$ a gauge frame obtained from a scalar field $f : M \to \mathbb{R}$.
 The gauge derivative of signature $(i_1, \dots i_m)$ is defined as
 $$
     (\delta f)_{(i_1, \dots i_m)} := (\nabla^m f)(v_{i_1}, \dots, v_{i_m})
 $$
 
-## Gauge frame
+## Gauge Derivatives on R2
 
 ![gauge frame](images/gauge_frame.svg)
 
-Structure tensor and Hessian frames on a crop of a photograph.
-Blue is the first frame vector, orange the second.
-For the structure tensor, blue runs along edges and orange across them.
+![gauge derivatives](images/gauge_derivatives.svg)
+
+```python
+import torch
+from field import Field
+from frames import covariant_derivative_in_frame, structure_tensor_frame
+from gaussian_blur import gaussian_blur
+from geometry import levi_civita_difference_tensor
+
+H, W = 64, 64
+signal = Field(torch.randn(H, W), "ss")  # [64, 64] ss
+signal = gaussian_blur(signal, sigma=2.0)  # [64, 64] ss
+metric = Field(torch.eye(2).reshape(1, 1, 2, 2), "ssll")  # [1, 1, 2, 2] ssll
+difference_tensor = levi_civita_difference_tensor(metric)  # [1, 1, 2, 2, 2] ssull
+eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [64, 64, 2] ssl, [64, 64, 2, 2] ssul
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [64, 64, 2, 2] ssll
+```
+
+## Gauge Derivatives on  M2
 
 ![ribbon signal](images/ribbon_signal.png)
 
-A ribbon on `M2 = R² × S¹` around the circle lifted to its tangent angle, drawn in
-`(x, y, ξθ)`, where the metric `diag(1, 1, ξ²)` in the frame `A` looks Euclidean.
-
 ![ribbon frame](images/ribbon_frame.png)
-
-Structure tensor frame of the ribbon, blurred over the size of the ribbon. Blue is through
-the ribbon, orange across it and green along it.
-
-## Gauge derivatives
-
-![gauge derivatives](images/gauge_derivatives.svg)
 
 ![ribbon derivatives](images/ribbon_derivatives.png)
 
 ![ribbon cross-section](images/ribbon_cross_section.svg)
 
-First gauge derivatives `|v_i f|` of the ribbon in its structure tensor frame, blurred over
-the size of the ribbon, as densities and on a cross-section. The sign of each frame vector is
-arbitrary, hence the absolute value. `v_1 f` picks up the faces of the ribbon, `v_2 f` its
-edges, and `v_3 f` is zero, as nothing changes along the ribbon.
+```python
+import torch
+from field import Field
+from frames import constant_metric_in_frame, covariant_derivative_in_frame, hessian_frame
+from gaussian_blur import gaussian_blur
+from geometry import weitzenbock_difference_tensor
+from m2 import left_invariant_frame
+
+O, H, W = 64, 64, 64
+signal = Field(torch.randn(O, H, W), "sss")  # [64, 64, 64] sss
+signal = gaussian_blur(signal, sigma=2.0)  # [64, 64, 64] sss
+li_frame = left_invariant_frame(O)  # [64, 1, 1, 3, 3] sssul
+difference_tensor = weitzenbock_difference_tensor(li_frame)  # [64, 1, 1, 3, 3, 3] sssull
+G = torch.diag(torch.tensor([1.0, 4.0, 0.5]))
+metric = constant_metric_in_frame(G, li_frame)  # [64, 1, 1, 3, 3] sssll
+values, gauge_frame = hessian_frame(signal, difference_tensor, metric)  # [64, 64, 64, 3] sssl, [64, 64, 64, 3, 3] sssul
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [64, 64, 64, 3, 3] sssll
+```
 
 ## Tensor fields
 
@@ -54,17 +74,12 @@ A `Field` is a `torch.Tensor`, that being an array with a _shape_, with an addit
 | `u` | upper index |
 | `l` | lower index |
 
-Batch dimensions come first, then spatial, then indices, with upper and lower in any
-order.
-The number of `s`'s in the type is called `n` and is the number of spatial dimensions.
+Batch dimensions come first, then spatial, then indices, with upper and lower in any order.\
+The number of `s`'s in the type is called `n` and is the number of spatial dimensions. \
 Every index has size `n`.
-A spatial dimension of size 1 broadcasts: the field is constant along it.
 
-Indices are components in the grid basis unless converted with `change_basis`, and the
-type string does not record which. `partial_derivative`, `covariant_derivative`,
-`gradient`, the difference tensors and `gaussian_blur` need every index in the grid basis.
-`contract` and `trace` need the two summed indices in the same basis, and `inner_product`
-and `norm2` need all their arguments in the same basis.
+Indices are components in some basis and the type string does not record which.\
+This means the user has to keep track of which basis is used where.
 
 ### Common fields
 
@@ -72,59 +87,14 @@ On a 2D grid of `H×W` points, with a batch of `B`:
 
 | shape | type | object | examples |
 |-------|------|--------|----------|
-| `[H,W]` | `ss` | scalar field | image `f` |
-| `[B,H,W]` | `bss` | batch of scalar fields | several images |
-| `[H,W,2]` | `ssu` | vector field | gradient `g^ij e_j(f)` |
-| `[H,W,2]` | `ssl` | covector field | differential `e_i(f)` |
-| `[H,W,2,2]` | `ssll` | (0,2)-tensor field | metric `g_ij` (`[1,1,2,2]` if constant), Hessian `(∇ ∇ f)_ij`, structure tensor `(S f)_ij` |
-| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ij` |
-| `[H,W,2,2]` | `ssul` | (1,1)-tensor field | frame `F^i_j`, linear mappings `A^i_j` |
-| `[H,W,2,…,2]` | `ssl…l` | k lower indices | k-th covariant derivative of `f` |
-| `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field  | difference tensor `D = ∇ − ∇^flat` from the grid's flat connection `∇^flat` |
-
-## Example
-
-```python
-import torch
-from field import Field
-from frames import gauge_jet, structure_tensor_frame
-from gaussian_blur import gaussian_blur
-from geometry import levi_civita_difference_tensor
-
-H, W = 64, 64
-signal = Field(torch.randn(H, W), "ss")
-signal = gaussian_blur(signal, sigma=2.0)
-metric = Field(torch.eye(2).reshape(1, 1, 2, 2), "ssll")
-difference_tensor = levi_civita_difference_tensor(metric)
-eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)
-gauge_derivatives = gauge_jet(signal, gauge_frame, difference_tensor, 2)
-```
-
-## Example on M2
-
-Second-order gauge derivatives of a blurred random signal on position orientation space
-`M2 = R² × S¹`, in the gauge frame of the Hessian. The connection is the one for which the
-left-invariant frame `A_1 = cos θ ∂_x + sin θ ∂_y`, `A_2 = −sin θ ∂_x + cos θ ∂_y`,
-`A_3 = ∂_θ` is parallel, and the metric is constant in that frame.
-
-```python
-import torch
-from field import Field
-from frames import constant_metric_in_frame, gauge_jet, hessian_frame
-from gaussian_blur import gaussian_blur
-from geometry import weitzenbock_difference_tensor
-from m2 import left_invariant_frame
-
-O, H, W = 64, 64, 64
-signal = Field(torch.randn(O, H, W), "sss")
-signal = gaussian_blur(signal, sigma=2.0)
-li_frame = left_invariant_frame(O)
-difference_tensor = weitzenbock_difference_tensor(li_frame)
-G = torch.diag(torch.tensor([1.0, 4.0, 0.5]))
-metric = constant_metric_in_frame(G, li_frame)
-values, gauge_frame = hessian_frame(signal, difference_tensor, metric)
-gauge_derivatives = gauge_jet(signal, gauge_frame, difference_tensor, 2)
-```
+| `[H,W]` | `ss` | (0,0)-tensor field, i.e. scalar field | image `f` |
+| `[H,W,2]` | `ssu` | (1,0)-tensor field, i.e. vector field | gradient `g^ij (e_j f) e_i ` |
+| `[H,W,2]` | `ssl` | (0,1)-tensor field, i.e. covector field | differential `e_i(f) e^i` |
+| `[H,W,2,2]` | `ssll` | (0,2)-tensor field, i.e. bilinear form field | metric `g_ij e^i ⊗ e^j`, Hessian `(∇ ∇ f)_ij e^i ⊗ e^j`, structure tensor `(S f)_ij e^i ⊗ e^j` |
+| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ij e_i ⊗ e_j` |
+| `[H,W,2,2]` | `ssul` | (1,1)-tensor field, i.e. linear map field | frame `F^i_j e_i ⊗ f^j`, linear mappings `A^i_j e_i ⊗ e^j` |
+| `[H,W,2,…,2]` | `ssl…l` | (0,k)-tensor field | k-th covariant derivative of a scalar field |
+| `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field  | difference tensor `D^i_kl e_i ⊗ e^k ⊗ e^l`|
 
 ## Functions
 
@@ -164,7 +134,7 @@ gauge_derivatives = gauge_jet(signal, gauge_frame, difference_tensor, 2)
 | `structure_tensor_frame(field, sigma, metric)` | `field: BS`, `metric: Sll` | `BSl`, `BSul` | eigenframe of `df ⊗ df` blurred with `sigma` |
 | `hessian_frame(field, difference_tensor, metric)` | `field: BS`, `difference_tensor: Sull`, `metric: Sll` | `BSl`, `BSul` | eigenframe of `∇∇f` |
 | `constant_metric_in_frame(metric, frame)` | `metric: [n, n]`, `frame: Sul` | `Sll` | metric with components `G` in the frame |
-| `gauge_jet(field, frame, difference_tensor, order)` | `field: BSI`, `frame: BSul`, `difference_tensor: Sull` | `BSI` + `order` × `l` | `order`-th covariant derivative, every index in the frame |
+| `covariant_derivative_in_frame(field, frame, difference_tensor, order)` | `field: BSI`, `frame: BSul`, `difference_tensor: Sull` | `BSI` + `order` × `l` | `order`-th covariant derivative, in the frame basis |
 
 ### `m2.py`
 
