@@ -10,9 +10,10 @@ class Field:
     `type` has one character per dimension of `data`: `b` batch, `s` spatial, `u` upper
     index, `l` lower index. Batch dimensions come first, then spatial, then indices, with
     upper and lower in any order. n is the number of spatial dimensions and every index has
-    size n. The indices are components in a basis: the grid basis e_a and its dual e^a,
-    unless converted with change_basis. Keeping track of which indices are in which basis
-    is up to the caller.
+    size n. A spatial dimension of size 1 broadcasts: the field is constant along it. The
+    indices are components in a basis: the grid basis e_i and its dual e^i, unless
+    converted with change_basis. Keeping track of which indices are in which basis is up
+    to the caller.
 
     In docstrings, `B` is any number of batch dimensions, `S` the spatial dimensions, and
     `I`, `J` any string of `u` and `l`. E.g. `BSIl` is a field of type `BSI` with a lower
@@ -118,7 +119,7 @@ def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
 
 
 def trace(field: Field, index_i: int, index_j: int) -> Field:
-    """Contract two indices of a field, one upper and one lower: T^m_m.
+    """Contract two indices of a field, one upper and one lower: T^i_i.
 
     Args:
         field: Field of type `BSI`.
@@ -143,9 +144,9 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
 
 
 def change_basis(field: Field, frame: Field, index: int) -> Field:
-    """Express one index of a field in a frame F_i = F^a_i e_a.
+    """Express one index of a field in a frame f_j = F^i_j e_i.
 
-    A lower index becomes T_i = T_a F^a_i and an upper index T^i = (F^-1)^i_a T^a.
+    A lower index becomes T_j = T_i F^i_j and an upper index T^j = (F^-1)^j_i T^i.
 
     Args:
         field: Field of type `BSI`.

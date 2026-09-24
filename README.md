@@ -33,6 +33,7 @@ Batch dimensions come first, then spatial, then indices, with upper and lower in
 order. 
 The number of `s`'s in the type is called `n` and is the number of spatial dimensions.
 Every index has size `n`.
+A spatial dimension of size 1 broadcasts: the field is constant along it.
 
 Indices are components in the grid basis unless converted with `change_basis`, and the
 type string does not record which. `partial_derivative`, `covariant_derivative`,
@@ -47,11 +48,11 @@ On a 2D grid of `H×W` points, with a batch of `B`:
 |-------|------|--------|----------|
 | `[H,W]` | `ss` | scalar field | image `f` |
 | `[B,H,W]` | `bss` | batch of scalar fields | several images |
-| `[H,W,2]` | `ssu` | vector field | gradient `g^ab ∂_b f` |
-| `[H,W,2]` | `ssl` | covector field | differential `∂_a f` |
-| `[H,W,2,2]` | `ssll` | (0,2)-tensor field | metric `g_ab`, Hessian `(∇ ∇ f)_ab`, structure tensor `(S f)_ab` |
-| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ab` |
-| `[H,W,2,2]` | `ssul` | (1,1)-tensor field | frame `F^a_i`, linear mappings `A^a_b` |
+| `[H,W,2]` | `ssu` | vector field | gradient `g^ij e_j(f)` |
+| `[H,W,2]` | `ssl` | covector field | differential `e_i(f)` |
+| `[H,W,2,2]` | `ssll` | (0,2)-tensor field | metric `g_ij` (`[1,1,2,2]` if constant), Hessian `(∇ ∇ f)_ij`, structure tensor `(S f)_ij` |
+| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ij` |
+| `[H,W,2,2]` | `ssul` | (1,1)-tensor field | frame `F^i_j`, linear mappings `A^i_j` |
 | `[H,W,2,…,2]` | `ssl…l` | k lower indices | k-th covariant derivative of `f` |
 | `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field  | difference tensor `D = ∇ − ∇^flat` from the grid's flat connection `∇^flat` |
 
@@ -154,11 +155,11 @@ error(secondA.data[..., 2, 0], A1A3f)  # 1e-13
 
 | function | takes | returns | computes |
 |----------|-------|---------|----------|
-| `partial_derivative(field)` | `field: BSI` | `BSIl` | `∇^flat_z T = ∂_z T` |
-| `differential(field)` | `field: BS` | `BSl` | `df`, the same for every connection |
+| `partial_derivative(field)` | `field: BSI` | `BSIl` | `∇^flat T` |
+| `differential(field)` | `field: BS` | `BSl` | `df` |
 | `levi_civita_difference_tensor(metric)` | `metric: Sll` | `Sull` | `D` of the Levi-Civita connection |
 | `weitzenbock_difference_tensor(frame)` | `frame: Sul` | `Sull` | `D` of the connection for which the frame is parallel |
-| `covariant_derivative(field, difference_tensor)` | `field: BSI`, `difference_tensor: Sull` | `BSIl` | `∇_z T` with `∇ = ∇^flat + D`, for any connection |
+| `covariant_derivative(field, difference_tensor)` | `field: BSI`, `difference_tensor: Sull` | `BSIl` | `∇ T` with `∇ = ∇^flat + D` |
 
 ### `frames.py`
 
