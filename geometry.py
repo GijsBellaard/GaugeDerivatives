@@ -37,6 +37,56 @@ def differential(field: Field) -> Field:
     return partial_derivative(field)
 
 
+def gradient(field: Field, metric: Field) -> Field:
+    """Gradient of a scalar field, grad f = g^ij e_j(f) e_i.
+
+    Args:
+        field: Scalar field of type `BS`.
+        metric: Metric of type `Sll` in the grid basis.
+
+    Returns:
+        Field of type `BSu` in the grid basis.
+    """
+    if metric.indices_type != "ll":
+        raise ValueError(f"a metric has two lower indices, got {metric.indices_type!r}")
+    inverse = Field(torch.linalg.inv(metric.data), metric.prefix_type + "uu")
+    return contract(inverse, 1, differential(field), 0)
+
+
+def inner_product(a: Field, b: Field, metric: Field) -> Field:
+    """Inner product of two vector fields, g_ij a^i b^j, or two covector fields, g^ij a_i b_j.
+
+    Args:
+        a: Field of type `BSu` or `BSl`.
+        b: Field of the same index type as a, in the same basis.
+        metric: Metric of type `Sll` in the same basis.
+
+    Returns:
+        Scalar field of type `BS`.
+    """
+    if a.indices_type not in ("u", "l") or b.indices_type != a.indices_type:
+        raise ValueError(f"expected two vector or two covector fields, got {a.type!r} "
+                         f"and {b.type!r}")
+    if metric.indices_type != "ll":
+        raise ValueError(f"a metric has two lower indices, got {metric.indices_type!r}")
+    if a.indices_type == "l":
+        metric = Field(torch.linalg.inv(metric.data), metric.prefix_type + "uu")
+    return contract(contract(metric, 0, a, 0), 0, b, 0)
+
+
+def norm2(field: Field, metric: Field) -> Field:
+    """Squared norm of a vector or covector field, inner_product(field, field, metric).
+
+    Args:
+        field: Field of type `BSu` or `BSl`.
+        metric: Metric of type `Sll` in the same basis.
+
+    Returns:
+        Scalar field of type `BS`.
+    """
+    return inner_product(field, field, metric)
+
+
 def levi_civita_difference_tensor(metric: Field) -> Field:
     """Levi-Civita connection of a metric, as its difference tensor D = ∇ - ∇^flat.
 

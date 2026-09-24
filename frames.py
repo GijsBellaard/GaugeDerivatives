@@ -1,6 +1,8 @@
 import torch
 
-from field import Field
+from field import Field, change_basis, tensor_product
+from gaussian_blur import gaussian_blur
+from geometry import covariant_derivative, differential
 
 
 def _whiten(form: Field, metric: Field) -> tuple[torch.Tensor, torch.Tensor]:
@@ -72,3 +74,71 @@ def singular_frames(form: Field, metric: Field) -> tuple[Field, Field, Field]:
     values_type = form.prefix_type + "l"
     frame_type = form.prefix_type + "ul"
     return Field(sigma, values_type), Field(left, frame_type), Field(right, frame_type)
+
+
+def structure_tensor_frame(field: Field, sigma: float, metric: Field) -> tuple[Field, Field]:
+    """Eigenframe of the structure tensor, df ⊗ df blurred.
+
+    Args:
+        field: Scalar field of type `BS`.
+        sigma: Standard deviation of the blur in grid steps.
+        metric: Metric of type `Sll` in the grid basis.
+
+    Returns:
+        Values of type `BSl`, ascending, and frame of type `BSul` in the grid basis.
+    """
+    df = differential(field)
+    structure_tensor = gaussian_blur(tensor_product(df, df), sigma)
+    return eigenframe(structure_tensor, metric)
+
+
+def hessian_frame(field: Field, difference_tensor: Field, metric: Field) -> tuple[Field, Field]:
+    """Eigenframe of the Hessian ∇∇f.
+
+    Args:
+        field: Scalar field of type `BS`.
+        difference_tensor: D = ∇ - ∇^flat of type `Sull` in the grid basis.
+        metric: Metric of type `Sll` in the grid basis.
+
+    Returns:
+        Values of type `BSl`, ascending, and frame of type `BSul` in the grid basis.
+    """
+    hessian = covariant_derivative(differential(field), difference_tensor)
+    return eigenframe(hessian, metric)
+
+
+def gauge_jet(field: Field, frame: Field, difference_tensor: Field, order: int) -> Field:
+    """Covariant derivative of the given order, with every index expressed in a frame.
+
+    Args:
+        field: Field of type `BSI` in the grid basis.
+        frame: Frame of type `BSul` in the grid basis, where [..., :, i] is f_i.
+        difference_tensor: D = ∇ - ∇^flat of type `Sull` in the grid basis.
+        order: Number of covariant derivatives.
+
+    Returns:
+        Field of type `BSI` followed by order many `l`, with every index in the frame.
+    """
+    for _ in range(order):
+        field = covariant_derivative(field, difference_tensor)
+    for index in range(len(field.indices_type)):
+        field = change_basis(field, frame, index)
+    return field
+
+
+def constant_metric_in_frame(metric: torch.Tensor, frame: Field) -> Field:
+    """Metric whose components in a frame are constant, g(f_i, f_j) = G_ij.
+
+    In the grid basis g_ij = (F^-1)^k_i G_kl (F^-1)^l_j.
+
+    Args:
+        metric: Tensor G of shape [n, n], the components in the frame.
+        frame: Frame of type `Sul` in the grid basis, where [..., :, i] is f_i.
+
+    Returns:
+        Metric of type `Sll` in the grid basis.
+    """
+    inverse = torch.linalg.inv(frame.data)
+    data = inverse.mT @ metric @ inverse
+    type = frame.prefix_type + "ll"
+    return Field(data, type)
