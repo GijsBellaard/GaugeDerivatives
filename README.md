@@ -20,14 +20,15 @@ Structure tensor and Hessian frames on a crop of a photograph.
 Blue is the first frame vector, orange the second.
 For the structure tensor, blue runs along edges and orange across them.
 
-![ribbon signals](images/ribbon_signals.png)
+![ribbon signal](images/ribbon_signal.png)
 
 A ribbon on `M2 = R² × S¹` around the circle lifted to its tangent angle, drawn in
 `(x, y, ξθ)`, where the metric `diag(1, 1, ξ²)` in the frame `A` looks Euclidean.
 
 ![ribbon frame](images/ribbon_frame.png)
 
-Hessian frame of the ribbon. Blue is through the ribbon, orange across it and green along it.
+Structure tensor frame of the ribbon, blurred over the size of the ribbon. Blue is through
+the ribbon, orange across it and green along it.
 
 ## Gauge derivatives
 
@@ -169,7 +170,7 @@ gauge_derivatives = gauge_jet(signal, gauge_frame, difference_tensor, 2)
 
 | function | takes | returns | computes |
 |----------|-------|---------|----------|
-| `left_invariant_frame(orientations, dx)` | number of orientations | `sssul` | forward, sideways and turn frame `A_1, A_2, A_3` of `M2 = R² × S¹` |
+| `left_invariant_frame(orientations, dx)` | number of orientations, grid step `dx` in y and x | `sssul` | forward, sideways and turn frame `A_1, A_2, A_3` of `M2 = R² × S¹` |
 
 ### `gaussian_blur.py`
 

@@ -61,22 +61,30 @@ def euclidean(n: int) -> Field:
     return Field(torch.eye(n).reshape(*[1] * n, n, n), "s" * n + "ll")
 
 
-def helical_ribbon(theta: torch.Tensor, y: torch.Tensor, x: torch.Tensor,
-                   metric: torch.Tensor) -> Field:
+def ribbon_directions() -> tuple[torch.Tensor, torch.Tensor]:
+    """Unit vectors across and through the ribbon, in the frame A.
+
+    Across is A_2. Through is orthogonal to it and to the core's tangent T = R A_1 + A_3 in
+    METRIC: the covector T × A_2 = (-1, 0, R) annihilates both, raised with the metric.
+    """
+    across = torch.tensor([0.0, 1.0, 0.0])
+    through = torch.linalg.solve(METRIC, torch.tensor([-1.0, 0.0, RADIUS]))
+    return across, through / (through @ METRIC @ through).sqrt()
+
+
+def helical_ribbon(theta: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> Field:
     """Ribbon on M2 around the lifted circle (x, y, θ) = (R cos t, R sin t, t + π/2).
 
-    Gaussian with standard deviations WIDTH across it, along A_2, and THICKNESS through it,
-    along N. Both are orthonormal in the metric and orthogonal to the core's tangent
-    T = R A_1 + A_3. On the core the Hessian frame is N, A_2, T.
+    Gaussian with standard deviations WIDTH across it and THICKNESS through it, see
+    ribbon_directions.
     """
     phi = torch.atan2(y, x)
     wrapped = torch.remainder(theta - phi + torch.pi / 2, 2 * torch.pi) - torch.pi
     radial = RADIUS - torch.sqrt(x**2 + y**2)
     offset = torch.stack([torch.zeros_like(phi), radial, wrapped], dim=-1)  # in A at t = phi
-    across = torch.tensor([0.0, 1.0, 0.0])
-    through = torch.tensor([-XI**2, 0.0, RADIUS]) / (XI * (XI**2 + RADIUS**2) ** 0.5)
-    u = torch.einsum("...i,ij,j->...", offset, metric, across)
-    v = torch.einsum("...i,ij,j->...", offset, metric, through)
+    across, through = ribbon_directions()
+    u = torch.einsum("...i,ij,j->...", offset, METRIC, across)
+    v = torch.einsum("...i,ij,j->...", offset, METRIC, through)
     return Field(torch.exp(-u**2 / (2 * WIDTH**2) - v**2 / (2 * THICKNESS**2)), "sss")
 
 
@@ -141,13 +149,24 @@ def make_derivative_figure(path: Path) -> None:
 
 
 def ribbon() -> tuple[Field, Field, Field]:
-    """Helical ribbon on its grid, its Hessian frame and the Weitzenböck difference tensor."""
-    theta, y, x = ribbon_coordinates()
+    """Helical ribbon on its grid, its structure tensor frame and the Weitzenböck difference
+    tensor.
+
+    With a blur as large as the ribbon, the frame is through, across and along it over its
+    whole cross-section, unlike the Hessian frame, which is only ordered so near its core.
+    """
     A = left_invariant_frame(ORIENTATIONS, SPACING)
-    difference_tensor = weitzenbock_difference_tensor(A)
-    f = helical_ribbon(theta, y, x, METRIC)
-    _, frame = hessian_frame(f, difference_tensor, constant_metric_in_frame(METRIC, A))
-    return f, frame, difference_tensor
+    f = helical_ribbon(*ribbon_coordinates())
+    _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
+    frame = Field(frame.data.flip(-1), frame.type)  # descending, so v_1 is through
+    return f, frame, weitzenbock_difference_tensor(A)
+
+
+def in_plot(vector: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
+    """A vector with components in the frame A at orientation θ, in (x, y, XI θ)."""
+    c, s = theta.cos(), theta.sin()
+    return torch.stack([vector[0] * c - vector[1] * s, vector[0] * s + vector[1] * c,
+                        XI * vector[2]])
 
 
 def ribbon_coordinates() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -217,8 +236,7 @@ def add_density(plotter: pv.Plotter, volume: pv.ImageData, name: str, limit: flo
     density.prop.interpolation_type = "linear"
 
 
-def make_ribbon_signal_figure(path: Path) -> None:
-    f, _, _ = ribbon()
+def make_ribbon_signal_figure(path: Path, f: Field) -> None:
     plotter = pv.Plotter(off_screen=True, window_size=(1400, 1100))
     add_density(plotter, ribbon_volume(f=f.data), "f", 1.0, opacity="sigmoid_8")
     show_ribbon_axes(plotter)
@@ -226,8 +244,7 @@ def make_ribbon_signal_figure(path: Path) -> None:
     plotter.close()
 
 
-def make_ribbon_frame_figure(path: Path) -> None:
-    f, frame, _ = ribbon()
+def make_ribbon_frame_figure(path: Path, f: Field, frame: Field) -> None:
     theta, y, x = ribbon_coordinates()
     plotter = pv.Plotter(off_screen=True, window_size=(1400, 1100))
     add_density(plotter, ribbon_volume(f=f.data), "f", 1.0, cmap="Greys", opacity=[0, 0.2])
@@ -248,18 +265,12 @@ def make_ribbon_frame_figure(path: Path) -> None:
     plotter.close()
 
 
-def ribbon_derivatives() -> tuple[pv.ImageData, list[str], float]:
-    """Volume with f and the first gauge derivatives |v_i f| of the ribbon in its structure
-    tensor frame, their names and their maximum.
+def ribbon_derivatives(f: Field, frame: Field,
+                       difference_tensor: Field) -> tuple[pv.ImageData, list[str], float]:
+    """Volume with f and the first gauge derivatives |v_i f|, their names and their maximum.
 
-    With a blur as large as the ribbon, the frame is through, across and along it over its
-    whole cross-section, unlike the Hessian frame. The sign of each frame vector is
-    arbitrary, hence |v_i f|.
+    The sign of each frame vector is arbitrary, hence |v_i f|.
     """
-    f, _, difference_tensor = ribbon()
-    metric = constant_metric_in_frame(METRIC, left_invariant_frame(ORIENTATIONS, SPACING))
-    _, frame = structure_tensor_frame(f, RIBBON_SIGMA, metric)
-    frame = Field(frame.data.flip(-1), frame.type)  # descending, so v_1 is through
     first = gauge_jet(f, frame, difference_tensor, 1).data.abs()
     names = [f"\u2223v{chr(0x2080 + i + 1)}f\u2223" for i in range(3)]
     volume = ribbon_volume(f=f.data, **{name: first[..., i] for i, name in enumerate(names)})
@@ -270,8 +281,8 @@ def derivative_cmap(name: str, color: str) -> Colormap:
     return LinearSegmentedColormap.from_list(name, ["white", color, "black"])
 
 
-def make_ribbon_derivative_figure(path: Path) -> None:
-    volume, names, limit = ribbon_derivatives()
+def make_ribbon_derivative_figure(path: Path, volume: pv.ImageData, names: list[str],
+                                  limit: float) -> None:
     outline = volume.contour([0.5], scalars="f")
     plotter = pv.Plotter(off_screen=True, shape=(1, 3), window_size=(2700, 800), border=False)
     for i, (name, color) in enumerate(zip(names, RIBBON_COLORS)):
@@ -287,20 +298,17 @@ def make_ribbon_derivative_figure(path: Path) -> None:
     plotter.close()
 
 
-def make_ribbon_cross_section_figure(path: Path) -> None:
-    volume, names, limit = ribbon_derivatives()
-
+def make_ribbon_cross_section_figure(path: Path, volume: pv.ImageData, names: list[str],
+                                     limit: float) -> None:
     # Cross-section perpendicular to the core at θ = π, sampled in (x, y, XI θ) along the unit
-    # vectors A_2 and N of helical_ribbon, orthonormal in the metric.
+    # vectors of ribbon_directions.
     extent = 7.0
     across, through = torch.meshgrid(torch.linspace(-extent, extent, 141),
                                      torch.linspace(-extent, extent, 141), indexing="xy")
     theta = torch.tensor(torch.pi)
     t = theta - torch.pi / 2
     center = torch.stack([RADIUS * t.cos(), RADIUS * t.sin(), XI * theta])
-    a2 = torch.stack([-t.cos(), -t.sin(), torch.tensor(0.0)])
-    n = torch.stack([XI * t.sin(), -XI * t.cos(), torch.tensor(RADIUS)])
-    n = n / (XI**2 + RADIUS**2) ** 0.5
+    a2, n = (in_plot(direction, theta) for direction in ribbon_directions())
     points = center + across[..., None] * a2 + through[..., None] * n
     sampled = pv.PolyData(points.reshape(-1, 3).numpy()).sample(volume)
 
@@ -325,7 +333,10 @@ if __name__ == "__main__":
 
     make_frame_figure(IMAGES / "gauge_frame.svg")
     make_derivative_figure(IMAGES / "gauge_derivatives.svg")
-    make_ribbon_signal_figure(IMAGES / "ribbon_signals.png")
-    make_ribbon_frame_figure(IMAGES / "ribbon_frame.png")
-    make_ribbon_derivative_figure(IMAGES / "ribbon_derivatives.png")
-    make_ribbon_cross_section_figure(IMAGES / "ribbon_cross_section.svg")
+
+    f, frame, difference_tensor = ribbon()
+    derivatives = ribbon_derivatives(f, frame, difference_tensor)
+    make_ribbon_signal_figure(IMAGES / "ribbon_signal.png", f)
+    make_ribbon_frame_figure(IMAGES / "ribbon_frame.png", f, frame)
+    make_ribbon_derivative_figure(IMAGES / "ribbon_derivatives.png", *derivatives)
+    make_ribbon_cross_section_figure(IMAGES / "ribbon_cross_section.svg", *derivatives)
