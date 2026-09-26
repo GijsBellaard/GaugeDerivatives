@@ -15,7 +15,6 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
-from field import Field
 from frames import constant_metric_in_frame, covariant_derivative_in_frame, structure_tensor_frame
 from gaussian_blur import gaussian_blur
 from geometry import levi_civita_difference_tensor, weitzenbock_difference_tensor
@@ -50,35 +49,23 @@ TURN_FRAMES = 120            # Frames of one turn of the camera around the ribbo
 FRAME_DURATION = 50          # Milliseconds per frame
 
 
-def load_image() -> Field:
-    """Grayscale sample photograph in [0, 1]."""
+def load_image() -> torch.Tensor:
     with cbook.get_sample_data("grace_hopper.jpg") as f:
         image = TF.pil_to_tensor(Image.open(f).convert("L"))[0] / 255
-    return Field(image, "ss")
+    return image
 
 
-def euclidean(n: int) -> Field:
-    """Euclidean metric on an n-dimensional grid, constant so of shape [1, ..., 1, n, n]."""
-    return Field(torch.eye(n).reshape(*[1] * n, n, n), "s" * n + "ll")
+def euclidean(n: int) -> torch.Tensor:
+    return torch.eye(n).reshape(*[1] * n, n, n)
 
 
 def ribbon_directions() -> tuple[torch.Tensor, torch.Tensor]:
-    """Unit vectors across and through the ribbon, in the frame A.
-
-    Across is A_1. Through is orthogonal to it and to the core's tangent T = R A_0 + A_2 in
-    METRIC: the covector T × A_1 = (-1, 0, R) annihilates both, raised with the metric.
-    """
     across = torch.tensor([0.0, 1.0, 0.0])
     through = torch.linalg.solve(METRIC, torch.tensor([-1.0, 0.0, RADIUS]))
     return across, through / (through @ METRIC @ through).sqrt()
 
 
-def helical_ribbon(theta: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> Field:
-    """Ribbon on M2 around the lifted circle (x, y, θ) = (R cos t, R sin t, t + π/2).
-
-    Gaussian with standard deviations WIDTH across it and THICKNESS through it, see
-    ribbon_directions.
-    """
+def helical_ribbon(theta: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
     phi = torch.atan2(y, x)
     wrapped = torch.remainder(theta - phi + torch.pi / 2, 2 * torch.pi) - torch.pi
     radial = RADIUS - torch.sqrt(x**2 + y**2)
@@ -86,14 +73,14 @@ def helical_ribbon(theta: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> Fie
     across, through = ribbon_directions()
     u = torch.einsum("...i,ij,j->...", offset, METRIC, across)
     v = torch.einsum("...i,ij,j->...", offset, METRIC, through)
-    return Field(torch.exp(-u**2 / (2 * WIDTH**2) - v**2 / (2 * THICKNESS**2)), "sss")
+    return torch.exp(-u**2 / (2 * WIDTH**2) - v**2 / (2 * THICKNESS**2))
 
 
 def show_gauge_frame(ax, image, frame, r0, r1, c0, c1, step):
-    ax.imshow(image.data[r0:r1, c0:c1], cmap="gray", extent=(c0, c1, r1, r0))
+    ax.imshow(image[r0:r1, c0:c1], cmap="gray", extent=(c0, c1, r1, r0))
     ys, xs = torch.meshgrid(torch.arange(r0, r1, step), torch.arange(c0, c1, step), indexing="ij")
     for i, color in enumerate(FRAME_COLORS):
-        v = frame.data[r0:r1:step, c0:c1:step, :, i]
+        v = frame[r0:r1:step, c0:c1:step, :, i]
         ax.quiver(
             xs, ys,
             v[..., 1], v[..., 0],
@@ -110,8 +97,6 @@ def add_colorbar(ax, cmap: str | Colormap, vmin: float, vmax: float) -> Colorbar
 
 
 def add_frame_legend(ax, labels: list[str]) -> None:
-    """Legend of the frame vectors in RIBBON_COLORS, where a colorbar would be, so that the
-    panels line up."""
     legend_ax = add_colorbar(ax, "gray", 0, 1).ax
     legend_ax.clear()
     legend_ax.set_axis_off()
@@ -121,7 +106,6 @@ def add_frame_legend(ax, labels: list[str]) -> None:
 
 
 def show_gauge_derivative(ax, component, title, cmap, quantile=0.99):
-    """Image of a gauge derivative, symmetric around 0 if it takes negative values."""
     limit = component.abs().quantile(quantile).item()
     vmin = -limit if component.min() < 0 else 0
     ax.imshow(component, cmap=cmap, vmin=vmin, vmax=limit)
@@ -134,19 +118,17 @@ def derivative_cmap(name: str, color: str) -> Colormap:
 
 
 def make_r2_figure(path: Path) -> None:
-    """The photograph, its structure tensor frame on CROP, and its gauge derivatives across
-    edges."""
     blurred = gaussian_blur(load_image(), sigma=SIGMA)
-    metric = euclidean(blurred.n)
+    metric = euclidean(blurred.ndim)
     levi_civita = levi_civita_difference_tensor(metric)
     _, frame = structure_tensor_frame(blurred, FRAME_SIGMA, metric)
     # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
-    first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1).data[..., 1].abs()
-    second = covariant_derivative_in_frame(blurred, frame, levi_civita, 2).data[..., 1, 1]
+    first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1)[..., 1].abs()
+    second = covariant_derivative_in_frame(blurred, frame, levi_civita, 2)[..., 1, 1]
 
     fig, axes = plt.subplots(2, 2, figsize=(9, 8.2))
     (signal_ax, frame_ax), (first_ax, second_ax) = axes
-    signal_ax.imshow(blurred.data, cmap="gray", vmin=0, vmax=1)
+    signal_ax.imshow(blurred, cmap="gray", vmin=0, vmax=1)
     r0, r1, c0, c1 = CROP
     signal_ax.add_patch(Rectangle((c0, r0), c1 - c0, r1 - r0, fill=False, edgecolor="white",
                                   linewidth=1.5))
@@ -165,13 +147,7 @@ def make_r2_figure(path: Path) -> None:
     plt.close(fig)
 
 
-def ribbon() -> tuple[Field, Field, Field]:
-    """Helical ribbon on its grid, its structure tensor frame and the Weitzenböck difference
-    tensor.
-
-    With a blur as large as the ribbon, the frame is along, across and through it over its
-    whole cross-section, unlike the Hessian frame, which is only ordered so near its core.
-    """
+def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     A = left_invariant_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates())
     _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
@@ -179,7 +155,6 @@ def ribbon() -> tuple[Field, Field, Field]:
 
 
 def ribbon_coordinates() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """θ, y and x on the ribbon's grid, centred in y and x."""
     space = (torch.arange(SIZE) - (SIZE - 1) / 2) * SPACING
     return torch.meshgrid(torch.arange(ORIENTATIONS) * 2 * torch.pi / ORIENTATIONS,
                           space, space,
@@ -187,11 +162,6 @@ def ribbon_coordinates() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
 
 def ribbon_volume(**arrays: torch.Tensor) -> pv.ImageData:
-    """Arrays on the ribbon's grid as a volume in (x, y, XI θ).
-
-    A_0, A_1 and A_2 / XI are orthonormal in the metric, so in these coordinates it looks
-    Euclidean.
-    """
     center = (SIZE - 1) / 2 * SPACING
     volume = pv.ImageData(dimensions=(SIZE, SIZE, ORIENTATIONS),
                           spacing=(SPACING, SPACING, XI * 2 * torch.pi / ORIENTATIONS),
@@ -212,11 +182,6 @@ def set_ribbon_camera(plotter: pv.Plotter) -> None:
 
 
 def show_ribbon_axes(plotter: pv.Plotter) -> None:
-    """Axes x and y along the front edges of the floor and θ up a corner, and a grid on the
-    floor and the two back walls, for the current camera.
-
-    Like the axes of matplotlib, they move to other edges and walls as the camera turns.
-    """
     h, top = (SIZE - 1) / 2 * SPACING, XI * 2 * torch.pi
     focus, position = plotter.camera.focal_point, plotter.camera.position
     sx = 1 if position[0] >= focus[0] else -1   # Side of the camera in x and y
@@ -259,14 +224,12 @@ def ribbon_plotter() -> pv.Plotter:
 
 def add_density(plotter: pv.Plotter, volume: pv.ImageData, name: str, limit: float,
                 cmap: str | Colormap = "magma", opacity: str | list = "linear") -> None:
-    """Volume rendering of an array of volume, opacity from 0 to limit."""
     density = plotter.add_volume(volume, scalars=name, cmap=cmap, opacity=opacity,
                                  clim=(0, limit), show_scalar_bar=False)
     density.prop.interpolation_type = "linear"
 
 
-def add_ribbon_frame(plotter: pv.Plotter, frame: Field) -> None:
-    """The frame as tubes, on the core of the ribbon at every THETA_STEP-th orientation."""
+def add_ribbon_frame(plotter: pv.Plotter, frame: torch.Tensor) -> None:
     theta, y, x = ribbon_coordinates()
     steps = torch.tensor([XI * 2 * torch.pi / ORIENTATIONS, SPACING, SPACING])  # of e_θ, e_y, e_x
     for k in range(MARGIN, ORIENTATIONS - MARGIN, THETA_STEP):
@@ -275,21 +238,19 @@ def add_ribbon_frame(plotter: pv.Plotter, frame: Field) -> None:
         j = round(RADIUS * theta[k, 0, 0].sin().item() / SPACING + (SIZE - 1) / 2)
         point = torch.stack([x[k, i, j], y[k, i, j], XI * theta[k, i, j]])
         for n, color in enumerate(RIBBON_COLORS):
-            v = 3.5 * (frame.data[k, i, j, :, n] * steps).flip(0)  # (x, y, XI θ)
+            v = 3.5 * (frame[k, i, j, :, n] * steps).flip(0)  # (x, y, XI θ)
             tube = pv.Tube(pointa=(point - v).tolist(), pointb=(point + v).tolist(), radius=0.25)
             plotter.add_mesh(tube, color=color)
     plotter.enable_depth_peeling()
 
 
 def trim(image: np.ndarray) -> tuple[np.ndarray, int, int]:
-    """Image cropped to what is drawn, and the row and column where the crop starts."""
     drawn = (image < 250).any(-1)
     rows, cols = np.nonzero(drawn.any(1))[0], np.nonzero(drawn.any(0))[0]
     return image[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1], rows[0], cols[0]
 
 
 def align(trimmed: list[tuple[np.ndarray, int, int]], margin: int = 10) -> list[np.ndarray]:
-    """Trimmed images back in place on white canvases of one size, just large enough for all."""
     r0 = min(r for _, r, _ in trimmed)
     c0 = min(c for _, _, c in trimmed)
     r1 = max(r + image.shape[0] for image, r, _ in trimmed)
@@ -304,8 +265,6 @@ def align(trimmed: list[tuple[np.ndarray, int, int]], margin: int = 10) -> list[
 
 
 def turntable(plotters: list[pv.Plotter], frames: int) -> list[list[np.ndarray]]:
-    """Screenshots of the plotters, which are closed, as their cameras turn once around the θ
-    axis, all cropped alike to what is drawn. [i][k] is plotter i at frame k."""
     trimmed = []
     for _ in range(frames):
         for plotter in plotters:
@@ -319,14 +278,12 @@ def turntable(plotters: list[pv.Plotter], frames: int) -> list[list[np.ndarray]]
 
 
 def make_m2_figure(path: Path) -> None:
-    """The ribbon, its structure tensor frame and its first gauge derivatives across and
-    through it, as the camera turns around it."""
     f, frame, difference_tensor = ribbon()
     # The sign of each frame vector is arbitrary, hence |(δf)_i|.
-    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1).data.abs()
+    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1).abs()
     limit = first[..., RIBBON_DIRECTIONS].max().item()
     names = [f"d{i}" for i in RIBBON_DIRECTIONS]
-    volume = ribbon_volume(f=f.data, **{name: first[..., i]
+    volume = ribbon_volume(f=f, **{name: first[..., i]
                                         for name, i in zip(names, RIBBON_DIRECTIONS)})
     outline = volume.contour([0.5], scalars="f")
 

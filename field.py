@@ -1,199 +1,28 @@
-from dataclasses import dataclass
-
 import torch
 
 
-@dataclass(frozen=True)
-class Field:
-    """Tensor field on a grid, stored as its components and a type string.
-
-    `type` has one character per dimension of `data`: `b` batch, `s` spatial, `u` upper
-    index, `l` lower index. Batch dimensions come first, then spatial, then indices, with
-    upper and lower in any order. n is the number of spatial dimensions and every index has
-    size n. A spatial dimension of size 1 broadcasts: the field is constant along it.
-
-    The indices are components in a basis. Unless converted with change_basis, this is the
-    grid basis e_i = ∂_i, with coordinates that count grid steps, and its dual e^i = dx^i.
-    Components are stored in the order their indices are written, so e.g. a metric
-    g = g_ij e^i ⊗ e^j is stored with [..., i, j] = g_ij.
-    Keeping track of which indices are in which basis is up to the caller.
-
-    In docstrings, e_i and e^i are always the grid basis, and E_i and E^i any basis and its
-    dual. `B` is any number of batch dimensions, `S` the spatial dimensions, and
-    `I`, `J` any string of `u` and `l`. E.g. `BSIl` is a field of type `BSI` with a lower
-    index appended.
-    """
-    data: torch.Tensor
-    type: str
-
-    def __post_init__(self):
-        if len(self.type) != self.data.ndim:
-            raise ValueError(f"type {self.type!r} has {len(self.type)} characters "
-                             f"for {self.data.ndim} dimensions")
-        if set(self.type) - set("bsul"):
-            raise ValueError(f"type {self.type!r} uses characters outside 'bsul'")
-        ordered = ("b" * self.type.count("b") + "s" * self.type.count("s")
-                   + "".join(c for c in self.type if c in "ul"))
-        if self.type != ordered:
-            raise ValueError(f"type {self.type!r} is out of order, expected {ordered!r}: "
-                             f"batch dimensions, then spatial, then indices")
-        for d in self.index_dims:
-            if self.data.shape[d] != self.n:
-                raise ValueError(f"dimension {d} is an index so it must have size n={self.n}, "
-                                 f"got {self.data.shape[d]}")
-
-    def __repr__(self) -> str:
-        return (f"Field(type={self.type!r}, shape={tuple(self.data.shape)}, "
-                f"dtype={self.data.dtype}, device={self.data.device})")
-
-    @property
-    def n(self) -> int:
-        """Number of spatial dimensions."""
-        return self.type.count("s")
-
-    @property
-    def indices_type(self) -> str:
-        """Index characters of type, e.g. `ul`."""
-        return "".join(c for c in self.type if c in "ul")
-
-    @property
-    def prefix_type(self) -> str:
-        """Batch and spatial characters of type, e.g. `bss`."""
-        return "".join(c for c in self.type if c in "bs")
-
-    @property
-    def spatial_dims(self) -> list[int]:
-        """Positions of the spatial dimensions in data."""
-        return [d for d, c in enumerate(self.type) if c == "s"]
-
-    @property
-    def index_dims(self) -> list[int]:
-        """Positions of the index dimensions in data."""
-        return [d for d, c in enumerate(self.type) if c in "ul"]
+def spatial_dims(
+    field: torch.Tensor, 
+    indices: str,
+    dim: tuple[int, ...] | None
+) -> tuple[int, ...]:
+    if dim is None:
+        return tuple(range(field.ndim - len(indices)))
+    return tuple(d % field.ndim for d in dim)
 
 
-def tensor_product(a: Field, b: Field) -> Field:
-    """Tensor product a ⊗ b, with (a ⊗ b)[..., I, J] = a[..., I] b[..., J].
-
-    E.g. a = a_i E^i and b = b_j E^j give a ⊗ b = a_i b_j E^i ⊗ E^j.
-
-    Args:
-        a: Tensor field of type `BSI`, components in any basis E_i and E^i.
-        b: Tensor field of type `BSJ`, components in the same basis.
-
-    Returns:
-        a ⊗ b of type `BSIJ`, components in that basis.
-    """
-    if a.n != b.n:
-        raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
-
-    # Label the indices of a 0..p-1 and those of b p..p+q-1.
-    p, q = len(a.indices_type), len(b.indices_type)
-    data = torch.einsum(
-        a.data, [..., *range(p)], 
-        b.data, [..., *range(p, p + q)],
-        [..., *range(p + q)]
-    )
-    type = max(a.prefix_type, b.prefix_type, key=len) + a.indices_type + b.indices_type
-    return Field(data, type)
-
-
-def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
-    """Contract an index of a with an index of b, one upper and one lower.
-
-    E.g. a = a^ij E_i ⊗ E_j and b = b_k E^k contracted over j and k give a^ij b_j E_i.
-
-    Args:
-        a: Tensor field of type `BSI`.
-        index_a: Position of the contracted index in `I`.
-        b: Tensor field of type `BSJ`.
-        index_b: Position of the contracted index in `J`, in the same basis as index_a.
-
-    Returns:
-        Tensor field of type `BSIJ` without the contracted pair.
-    """
-    if a.n != b.n:
-        raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
-    if a.indices_type[index_a] == b.indices_type[index_b]:
-        raise ValueError(f"index {index_a} of {a.type!r} and index {index_b} of {b.type!r} "
-                         f"are both {a.indices_type[index_a]!r}")
-
-    # Label the indices of a 0..p-1 and those of b p..p+q-1; the contracted pair shares one.
-    p, q = len(a.indices_type), len(b.indices_type)
-    labels = list(range(p + q))
-    labels[p + index_b] = index_a
-    kept = [i for i in range(p + q) if i not in (index_a, p + index_b)]
-    data = torch.einsum(
-        a.data, [..., *labels[:p]], 
-        b.data, [..., *labels[p:]], 
-        [..., *kept]
-    )
-    kinds = "".join((a.indices_type + b.indices_type)[i] for i in kept)
-    type = max(a.prefix_type, b.prefix_type, key=len) + kinds
-    return Field(data, type)
-
-
-def trace(field: Field, index_i: int, index_j: int) -> Field:
-    """Contract two indices of a field, one upper and one lower.
-
-    E.g. T = T^i_j E_i ⊗ E^j gives T^i_i.
-
-    Args:
-        field: Tensor field of type `BSI`.
-        index_i: Position of the first index in `I`.
-        index_j: Position of the second index in `I`, in the same basis as index_i.
-
-    Returns:
-        Tensor field of type `BSI` without the two indices.
-    """
-    if field.indices_type[index_i] == field.indices_type[index_j]:
-        raise ValueError(f"indices {index_i} and {index_j} of {field.type!r} "
-                         f"are both {field.indices_type[index_i]!r}")
-    # Label the indices 0..p-1; the contracted pair shares one.
-    p = len(field.indices_type)
-    labels = list(range(p))
-    labels[index_j] = index_i
-    kept = [i for i in range(p) if i not in (index_i, index_j)]
-    data = torch.einsum(field.data, [..., *labels], [..., *kept])
-    kinds = "".join(field.indices_type[i] for i in kept)
-    type = field.prefix_type + kinds
-    return Field(data, type)
-
-
-def change_basis(field: Field, frame: Field, index: int) -> Field:
-    """Express one index of a field in a frame v_j = V^i_j E_i.
-
-    A lower index, along E^i, becomes T_j = T_i V^i_j along v^j, and an upper index, along
-    E_i, becomes T^j = (V^-1)^j_i T^i along v_j.
-
-    Args:
-        field: Tensor field of type `BSI`.
-        frame: Frame v_j = V^i_j E_i.
-        index: Position of the index in `I`, in the basis E_i or E^i.
-
-    Returns:
-        Tensor field of type `BSI` with the index in the basis v_j or v^j.
-    """
-    if frame.indices_type != "ul":
-        raise ValueError(f"a frame has an upper and a lower index, got {frame.indices_type!r}")
-
-    # The index is summed with the frame over the spare label p, and the frame hands back
-    # its frame index at the same position.
-    p = len(field.indices_type)
-    labels = list(range(p))
-    labels[index] = p
-    if field.indices_type[index] == "l":
-        data = torch.einsum(
-            field.data, [..., *labels], 
-            frame.data, [..., p, index],
-            [..., *range(p)]
-        )
+def change_basis(
+    field: torch.Tensor, 
+    frame: torch.Tensor, 
+    index: int, 
+    kind: str,
+    dim: tuple[int, ...] | None = None
+) -> torch.Tensor:
+    last = frame.ndim - 3 if dim is None else max(d % field.ndim for d in dim)
+    frame = frame.reshape(*frame.shape[:-2], *[1] * (field.ndim - last - 2), *frame.shape[-2:])
+    field = field.movedim(index, -1)
+    if kind == "l":
+        field = torch.einsum("...i,...ij->...j", field, frame)
     else:
-        inverse = torch.linalg.inv(frame.data)
-        data = torch.einsum(
-            inverse, [..., index, p], 
-            field.data, [..., *labels],
-            [..., *range(p)]
-        )
-    type = max(field.prefix_type, frame.prefix_type, key=len) + field.indices_type
-    return Field(data, type)
+        field = torch.einsum("...ji,...i->...j", torch.linalg.inv(frame), field)
+    return field.movedim(-1, index)
