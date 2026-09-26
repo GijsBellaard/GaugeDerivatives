@@ -31,7 +31,47 @@ eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [4, 64
 gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [4, 64, 64, 2, 2]
 ```
 
-## Gauge Derivatives on  M2
+## Gauge Derivatives on the Poincaré disk
+
+![gauge frame and derivatives on the Poincaré disk](images/poincare.svg)
+
+```python
+import torch
+from frames import structure_tensor_frame
+from geometry import covariant_derivative_in_frame, levi_civita_difference_tensor
+from grid import gaussian_blur
+from manifolds import poincare_metric
+
+B, N = 4, 256
+signal = torch.randn(B, N, N)                              # [4, 256, 256]
+signal = gaussian_blur(signal, 2.0, [1, 2])                # [4, 256, 256]
+metric = poincare_metric(N)                                # [1, 256, 256, 2, 2]
+difference_tensor = levi_civita_difference_tensor(metric)  # [1, 256, 256, 2, 2, 2]
+eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [4, 256, 256, 2], [4, 256, 256, 2, 2]
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [4, 256, 256, 2, 2]
+```
+
+## Gauge Derivatives on S2
+
+![gauge frame and derivatives on S2](images/s2.webp)
+
+```python
+import torch
+from frames import structure_tensor_frame
+from geometry import covariant_derivative_in_frame, levi_civita_difference_tensor
+from grid import gaussian_blur
+from manifolds import sphere_metric
+
+B, T, P = 4, 128, 256
+signal = torch.randn(B, T, P)                              # [4, 128, 256]
+signal = gaussian_blur(signal, 2.0, [1, 2])                # [4, 128, 256]
+metric = sphere_metric(T, P)                               # [1, 128, 256, 2, 2]
+difference_tensor = levi_civita_difference_tensor(metric)  # [1, 128, 256, 2, 2, 2]
+eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [4, 128, 256, 2], [4, 128, 256, 2, 2]
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [4, 128, 256, 2, 2]
+```
+
+## Gauge Derivatives on M2
 
 ![gauge frame and derivatives on M2](images/m2.webp)
 
@@ -40,7 +80,7 @@ import torch
 from frames import hessian_frame
 from geometry import constant_metric_in_frame, covariant_derivative_in_frame, weitzenbock_difference_tensor
 from grid import gaussian_blur
-from m2 import left_invariant_frame
+from manifolds import left_invariant_frame
 
 B, O, H, W = 4, 64, 64, 64
 signal = torch.randn(B, O, H, W)                             # [4, 64, 64, 64]

@@ -43,7 +43,7 @@ def structure_tensor_frame(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     spatial_dims = list(range(1, field.ndim))
     df = derivative(field, spatial_dims)
-    structure_tensor = df[..., :, None] * df[..., None, :]
+    structure_tensor = torch.einsum("...i,...j->...ij", df, df)
     structure_tensor = gaussian_blur(structure_tensor, sigma, spatial_dims)
     return eigenframe(structure_tensor, metric)
 
