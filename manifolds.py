@@ -1,7 +1,7 @@
 import torch
 
 
-def left_invariant_frame(orientations: int, dx: float = 1.0) -> torch.Tensor:
+def m2_natural_frame(orientations: int, dx: float = 1.0) -> torch.Tensor:
     O = orientations
     dtheta = 2 * torch.pi / O
     theta = torch.arange(O) * dtheta                             # [O]

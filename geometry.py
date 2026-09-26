@@ -39,7 +39,7 @@ def constant_metric_in_frame(
     return inverse.mT @ metric @ inverse
 
 
-def levi_civita_difference_tensor(metric: torch.Tensor) -> torch.Tensor:
+def levi_civita_connection(metric: torch.Tensor) -> torch.Tensor:
     spatial_dims = list(range(1, metric.ndim - 2))
     dg = derivative(metric, spatial_dims)
     term = (dg.transpose(-1, -2)
@@ -49,7 +49,7 @@ def levi_civita_difference_tensor(metric: torch.Tensor) -> torch.Tensor:
     return 0.5 * torch.einsum("...ad,...dbc->...abc", inverse, term)
 
 
-def weitzenbock_difference_tensor(frame: torch.Tensor) -> torch.Tensor:
+def weitzenbock_connection(frame: torch.Tensor) -> torch.Tensor:
     spatial_dims = list(range(1, frame.ndim - 2))
     dV = derivative(frame, spatial_dims)
     coframe = torch.linalg.inv(frame)
@@ -58,7 +58,7 @@ def weitzenbock_difference_tensor(frame: torch.Tensor) -> torch.Tensor:
 
 def covariant_derivative(
     field: torch.Tensor,
-    difference_tensor: torch.Tensor,
+    connection: torch.Tensor,
     indices: str = ""
 ) -> torch.Tensor:
     p = len(indices)
@@ -69,13 +69,13 @@ def covariant_derivative(
         labels[i] = p + 1
         if kind == "u":
             data = data + torch.einsum(
-                difference_tensor, [..., i, p, p + 1],
+                connection, [..., i, p, p + 1],
                 field, [..., *labels],
                 [..., *range(p + 1)]
             )  # + D^i_kl T^..l..
         else:
             data = data - torch.einsum(
-                difference_tensor, [..., p + 1, p, i],
+                connection, [..., p + 1, p, i],
                 field, [..., *labels],
                 [..., *range(p + 1)]
             )  # - D^l_ki T_..l..
@@ -85,12 +85,12 @@ def covariant_derivative(
 def covariant_derivative_in_frame(
     field: torch.Tensor, 
     frame: torch.Tensor,
-    difference_tensor: torch.Tensor, 
+    connection: torch.Tensor, 
     order: int,
     indices: str = ""
 ) -> torch.Tensor:
     for _ in range(order):
-        field = covariant_derivative(field, difference_tensor, indices)
+        field = covariant_derivative(field, connection, indices)
         indices += "l"
     for index, kind in enumerate(indices):
         field = change_basis(field, frame, index - len(indices), kind)

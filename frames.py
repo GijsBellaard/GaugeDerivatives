@@ -50,10 +50,10 @@ def structure_tensor_frame(
 
 def hessian_frame(
     field: torch.Tensor, 
-    difference_tensor: torch.Tensor, 
+    connection: torch.Tensor, 
     metric: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
     spatial_dims = list(range(1, field.ndim))
     df = derivative(field, spatial_dims)
-    hessian = covariant_derivative(df, difference_tensor, "l")
+    hessian = covariant_derivative(df, connection, "l")
     return eigenframe(hessian, metric)

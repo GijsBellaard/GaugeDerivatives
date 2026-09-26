@@ -19,9 +19,9 @@ from PIL import Image
 
 from frames import structure_tensor_frame
 from geometry import (constant_metric_in_frame, covariant_derivative_in_frame,
-                      levi_civita_difference_tensor, weitzenbock_difference_tensor)
+                      levi_civita_connection, weitzenbock_connection)
 from grid import gaussian_blur
-from manifolds import left_invariant_frame, poincare_metric, sphere_metric
+from manifolds import m2_natural_frame, poincare_metric, sphere_metric
 
 IMAGES = Path(__file__).parent / "images"
 FONT = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf"  # has θ and π
@@ -136,7 +136,7 @@ def derivative_cmap(name: str, color: str) -> Colormap:
 def make_r2_figure(path: Path) -> None:
     blurred = gaussian_blur(load_image().unsqueeze(0), SIGMA, [1, 2])
     metric = euclidean(2)
-    levi_civita = levi_civita_difference_tensor(metric)
+    levi_civita = levi_civita_connection(metric)
     _, frame = structure_tensor_frame(blurred, FRAME_SIGMA, metric)
     # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
     first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1)[0, ..., 1].abs()
@@ -165,10 +165,6 @@ def make_r2_figure(path: Path) -> None:
 
 
 def hyperbolic_triangle(p: int, q: int, r: int) -> tuple[float, complex, float]:
-    # Triangle with angles π/p at the origin, π/q at B on the real axis and π/r at C on the
-    # ray at angle π/p. Its sides follow from the angles by the hyperbolic law of cosines,
-    # and BC is the circle |z - c| = ρ through B and C orthogonal to the unit circle,
-    # Re(conj(z) c) = (1 + |z|^2) / 2 for z = B, C.
     a, b, g = math.pi / p, math.pi / q, math.pi / r
     ob = math.acosh((math.cos(g) + math.cos(a) * math.cos(b)) / (math.sin(a) * math.sin(b)))
     oc = math.acosh((math.cos(b) + math.cos(a) * math.cos(g)) / (math.sin(a) * math.sin(g)))
@@ -187,16 +183,12 @@ def disk_coordinates() -> torch.Tensor:
 
 
 def hyperbolic_tiling() -> torch.Tensor:
-    # Triangles of TILING, black and white by the parity of the reflections reaching them,
-    # with edges EDGE_WIDTH wide in the hyperbolic metric.
     a, c, rho = hyperbolic_triangle(*TILING)
     z = disk_coordinates()
     outside = z.abs() > 0.99
     z = torch.where(outside, 0, z)
     parity = torch.ones(z.shape, dtype=torch.float64)
 
-    # Fold every point into the triangle. Rotating by 2a is two reflections, so it keeps
-    # the parity, and each reflection in a side flips it.
     turns = torch.floor(torch.remainder(z.angle(), 2 * math.pi) / (2 * a))
     z = z * torch.exp(-2j * a * turns)
     ray = cmath.exp(-1j * a)
@@ -209,9 +201,6 @@ def hyperbolic_tiling() -> torch.Tensor:
             z = torch.where(flip, reflected, z)
             parity = torch.where(flip, -parity, parity)
 
-    # Hyperbolic distances to the sides: sinh d = 2 |Im(z e^{-iφ})| / (1 - |z|^2) to a line
-    # through the origin at angle φ, and ||z - c|^2 - ρ^2| / (ρ (1 - |z|^2)) to the circle.
-    # A product rather than the nearest side, so that f is smooth.
     scale = 1 - z.abs().square()
     distances = torch.stack([
         torch.asinh(2 * z.imag.abs() / scale),
@@ -225,9 +214,8 @@ def hyperbolic_tiling() -> torch.Tensor:
 def make_poincare_figure(path: Path) -> None:
     f = hyperbolic_tiling().unsqueeze(0)
     metric = poincare_metric(DISK_SIZE)
-    levi_civita = levi_civita_difference_tensor(metric)
+    levi_civita = levi_civita_connection(metric)
     _, frame = structure_tensor_frame(f, FRAME_SIGMA, metric)
-    # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
     first = covariant_derivative_in_frame(f, frame, levi_civita, 1)[0, ..., 1].abs()
     second = covariant_derivative_in_frame(f, frame, levi_civita, 2)[0, ..., 1, 1]
     f, frame = f[0], frame[0]
@@ -240,8 +228,6 @@ def make_poincare_figure(path: Path) -> None:
     signal_ax.set_title("$f$", fontsize=12)
     add_colorbar(signal_ax, "gray", 0, 1)
 
-    # Frame vectors at their length in the grid, so that they shrink towards the rim, where
-    # a unit of hyperbolic length is ever fewer pixels. At the centre it is 1 / (2 step).
     frame_ax.imshow(shown(f), cmap="gray", vmin=0, vmax=1, alpha=0.5)
     rows, cols = torch.meshgrid(torch.arange(0, DISK_SIZE, DISK_STEP),
                                 torch.arange(0, DISK_SIZE, DISK_STEP), indexing="ij")
@@ -272,10 +258,10 @@ def make_poincare_figure(path: Path) -> None:
 
 
 def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    A = left_invariant_frame(ORIENTATIONS, SPACING)
+    A = m2_natural_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates()).unsqueeze(0)
     _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
-    return f, frame, weitzenbock_difference_tensor(A)
+    return f, frame, weitzenbock_connection(A)
 
 
 def ribbon_coordinates() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -308,7 +294,7 @@ def set_ribbon_camera(plotter: pv.Plotter) -> None:
 def show_ribbon_axes(plotter: pv.Plotter) -> None:
     h, top = (SIZE - 1) / 2 * SPACING, XI * 2 * torch.pi
     focus, position = plotter.camera.focal_point, plotter.camera.position
-    sx = 1 if position[0] >= focus[0] else -1   # Side of the camera in x and y
+    sx = 1 if position[0] >= focus[0] else -1
     sy = 1 if position[1] >= focus[1] else -1
     back_x, back_y, front_x, front_y = -sx * h, -sy * h, sx * h, sy * h
     heights = [XI * torch.pi * t for t in THETA_TICKS]
@@ -355,14 +341,13 @@ def add_density(plotter: pv.Plotter, volume: pv.ImageData, name: str, limit: flo
 
 def add_ribbon_frame(plotter: pv.Plotter, frame: torch.Tensor) -> None:
     theta, y, x = ribbon_coordinates()
-    steps = torch.tensor([XI * 2 * torch.pi / ORIENTATIONS, SPACING, SPACING])  # of e_θ, e_y, e_x
+    steps = torch.tensor([XI * 2 * torch.pi / ORIENTATIONS, SPACING, SPACING])
     for k in range(MARGIN, ORIENTATIONS - MARGIN, THETA_STEP):
-        # Grid point nearest to the core at t = θ - π/2
         i = round(-RADIUS * theta[k, 0, 0].cos().item() / SPACING + (SIZE - 1) / 2)
         j = round(RADIUS * theta[k, 0, 0].sin().item() / SPACING + (SIZE - 1) / 2)
         point = torch.stack([x[k, i, j], y[k, i, j], XI * theta[k, i, j]])
         for n, color in enumerate(RIBBON_COLORS):
-            v = 3.5 * (frame[k, i, j, :, n] * steps).flip(0)  # (x, y, XI θ)
+            v = 3.5 * (frame[k, i, j, :, n] * steps).flip(0)
             tube = pv.Tube(pointa=(point - v).tolist(), pointb=(point + v).tolist(), radius=0.25)
             plotter.add_mesh(tube, color=color)
     plotter.enable_depth_peeling()
@@ -404,9 +389,8 @@ def turntable(plotters: list[pv.Plotter], frames: int, each_frame=lambda plotter
 
 
 def make_m2_figure(path: Path) -> None:
-    f, frame, difference_tensor = ribbon()
-    # The sign of each frame vector is arbitrary, hence |(δf)_i|.
-    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1)[0].abs()
+    f, frame, connection = ribbon()
+    first = covariant_derivative_in_frame(f, frame, connection, 1)[0].abs()
     f, frame = f[0], frame[0]
     limit = first[..., RIBBON_DIRECTIONS].max().item()
     names = [f"d{i}" for i in RIBBON_DIRECTIONS]
@@ -445,7 +429,6 @@ def make_m2_figure(path: Path) -> None:
 
 
 def save_animation(path: Path, fig, shown: list, images: list[list[np.ndarray]]) -> None:
-    # Every frame of the turntable images in the panels shown of fig, as an animated WebP.
     fig.tight_layout()
     frames = []
     for k in range(len(images[0])):
@@ -460,9 +443,6 @@ def save_animation(path: Path, fig, shown: list, images: list[list[np.ndarray]])
 
 
 def sphere_mirrors() -> torch.Tensor:
-    # Unit normals n_k of three planes through the origin, at dihedral angles π/p between
-    # n_0 and n_1, π/q between n_1 and n_2, and π/r between n_0 and n_2. The triangle they
-    # bound is where every n_k · x > 0.
     a, b, c = (math.pi / k for k in SPHERE_TILING)
     y = -math.cos(c)
     x = (-math.cos(b) + math.cos(a) * y) / math.sin(a)
@@ -483,9 +463,6 @@ def sphere_points(theta: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
 
 
 def spherical_tiling() -> torch.Tensor:
-    # Triangles between the mirrors of SPHERE_TILING, black and white by the parity of the
-    # reflections reaching them, with edges SPHERE_EDGE_WIDTH wide. Like hyperbolic_tiling,
-    # but the mirrors are planes through the origin, and the distance to one is asin(n · x).
     normals = sphere_mirrors()
     x = sphere_points(*sphere_coordinates())
     parity = torch.ones(x.shape[:-1], dtype=torch.float64)
@@ -501,9 +478,6 @@ def spherical_tiling() -> torch.Tensor:
 
 
 def pad_sphere(field: torch.Tensor) -> torch.Tensor:
-    # SPHERE_PAD more rows beyond each pole and columns around φ, so that the derivatives
-    # need no one-sided differences. Beyond a pole, θ becomes -θ and φ becomes φ + π, which
-    # keeps scalar fields and the diagonal metric as they are.
     n_phi, pad = SPHERE_GRID[1], SPHERE_PAD
     north = field[:, :pad].flip(1).roll(n_phi // 2, dims=2)
     south = field[:, -pad:].flip(1).roll(n_phi // 2, dims=2)
@@ -517,7 +491,6 @@ def crop_sphere(field: torch.Tensor) -> torch.Tensor:
 
 
 def sphere_mesh(**arrays: torch.Tensor) -> pv.StructuredGrid:
-    # The grid as a surface, with its first column repeated to close it around φ.
     close = lambda array: torch.cat([array, array[:, :1]], dim=1)
     theta, phi = sphere_coordinates()
     points = close(sphere_points(theta, phi))
@@ -535,7 +508,6 @@ def sphere_plotter() -> pv.Plotter:
 
 
 def add_sphere_frame(plotter: pv.Plotter, frame: torch.Tensor) -> None:
-    # The frame as tubes, at every SPHERE_STEP-th row and column of the grid.
     n_theta, n_phi = SPHERE_GRID
     step_theta, step_phi = torch.pi / n_theta, 2 * torch.pi / n_phi
     i, j = torch.meshgrid(torch.arange(SPHERE_STEP // 2, n_theta, SPHERE_STEP),
@@ -556,9 +528,8 @@ def make_s2_figure(path: Path) -> None:
     f = spherical_tiling().unsqueeze(0)
     metric = sphere_metric(*SPHERE_GRID)
     f_padded, metric_padded = pad_sphere(f), pad_sphere(metric)
-    levi_civita = levi_civita_difference_tensor(metric_padded)
+    levi_civita = levi_civita_connection(metric_padded)
     _, frame = structure_tensor_frame(f_padded, FRAME_SIGMA, metric_padded)
-    # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
     first = covariant_derivative_in_frame(f_padded, frame, levi_civita, 1)[..., 1]
     second = covariant_derivative_in_frame(f_padded, frame, levi_civita, 2)[..., 1, 1]
     first, second = crop_sphere(first)[0].abs(), crop_sphere(second)[0]
@@ -578,7 +549,6 @@ def make_s2_figure(path: Path) -> None:
                          smooth_shading=True, ambient=0.45, diffuse=0.6, specular=0.0)
         plotters.append(plotter)
     add_sphere_frame(plotters[1], frame)
-    # The tiling is the same after half a turn about the poles, so that loops.
     images = turntable(plotters, TURN_FRAMES // 2, degrees=180)
 
     fig, axes = plt.subplots(2, 2, figsize=(10, 9))
