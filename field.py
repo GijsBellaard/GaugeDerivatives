@@ -10,12 +10,16 @@ class Field:
     `type` has one character per dimension of `data`: `b` batch, `s` spatial, `u` upper
     index, `l` lower index. Batch dimensions come first, then spatial, then indices, with
     upper and lower in any order. n is the number of spatial dimensions and every index has
-    size n. A spatial dimension of size 1 broadcasts: the field is constant along it. The
-    indices are components in a basis: the grid basis e_i and its dual e^i, unless
-    converted with change_basis. Keeping track of which indices are in which basis is up
-    to the caller.
+    size n. A spatial dimension of size 1 broadcasts: the field is constant along it.
 
-    In docstrings, `B` is any number of batch dimensions, `S` the spatial dimensions, and
+    The indices are components in a basis. Unless converted with change_basis, this is the
+    grid basis e_i = ∂_i, with coordinates that count grid steps, and its dual e^i = dx^i.
+    Components are stored in the order their indices are written, so e.g. a metric
+    g = g_ij e^i ⊗ e^j is stored with [..., i, j] = g_ij.
+    Keeping track of which indices are in which basis is up to the caller.
+
+    In docstrings, e_i and e^i are always the grid basis, and E_i and E^i any basis and its
+    dual. `B` is any number of batch dimensions, `S` the spatial dimensions, and
     `I`, `J` any string of `u` and `l`. E.g. `BSIl` is a field of type `BSI` with a lower
     index appended.
     """
@@ -71,20 +75,25 @@ class Field:
 def tensor_product(a: Field, b: Field) -> Field:
     """Tensor product a ⊗ b, with (a ⊗ b)[..., I, J] = a[..., I] b[..., J].
 
+    E.g. a = a_i E^i and b = b_j E^j give a ⊗ b = a_i b_j E^i ⊗ E^j.
+
     Args:
-        a: Field of type `BSI`.
-        b: Field of type `BSJ`.
+        a: Tensor field of type `BSI`, components in any basis E_i and E^i.
+        b: Tensor field of type `BSJ`, components in the same basis.
 
     Returns:
-        Field of type `BSIJ`.
+        a ⊗ b of type `BSIJ`, components in that basis.
     """
     if a.n != b.n:
         raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
 
     # Label the indices of a 0..p-1 and those of b p..p+q-1.
     p, q = len(a.indices_type), len(b.indices_type)
-    data = torch.einsum(a.data, [..., *range(p)], b.data, [..., *range(p, p + q)],
-                        [..., *range(p + q)])
+    data = torch.einsum(
+        a.data, [..., *range(p)], 
+        b.data, [..., *range(p, p + q)],
+        [..., *range(p + q)]
+    )
     type = max(a.prefix_type, b.prefix_type, key=len) + a.indices_type + b.indices_type
     return Field(data, type)
 
@@ -92,14 +101,16 @@ def tensor_product(a: Field, b: Field) -> Field:
 def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
     """Contract an index of a with an index of b, one upper and one lower.
 
+    E.g. a = a^ij E_i ⊗ E_j and b = b_k E^k contracted over j and k give a^ij b_j E_i.
+
     Args:
-        a: Field of type `BSI`.
+        a: Tensor field of type `BSI`.
         index_a: Position of the contracted index in `I`.
-        b: Field of type `BSJ`.
+        b: Tensor field of type `BSJ`.
         index_b: Position of the contracted index in `J`, in the same basis as index_a.
 
     Returns:
-        Field of type `BSIJ` without the contracted pair.
+        Tensor field of type `BSIJ` without the contracted pair.
     """
     if a.n != b.n:
         raise ValueError(f"fields disagree on n: {a.n} and {b.n}")
@@ -112,22 +123,28 @@ def contract(a: Field, index_a: int, b: Field, index_b: int) -> Field:
     labels = list(range(p + q))
     labels[p + index_b] = index_a
     kept = [i for i in range(p + q) if i not in (index_a, p + index_b)]
-    data = torch.einsum(a.data, [..., *labels[:p]], b.data, [..., *labels[p:]], [..., *kept])
+    data = torch.einsum(
+        a.data, [..., *labels[:p]], 
+        b.data, [..., *labels[p:]], 
+        [..., *kept]
+    )
     kinds = "".join((a.indices_type + b.indices_type)[i] for i in kept)
     type = max(a.prefix_type, b.prefix_type, key=len) + kinds
     return Field(data, type)
 
 
 def trace(field: Field, index_i: int, index_j: int) -> Field:
-    """Contract two indices of a field, one upper and one lower: T^i_i.
+    """Contract two indices of a field, one upper and one lower.
+
+    E.g. T = T^i_j E_i ⊗ E^j gives T^i_i.
 
     Args:
-        field: Field of type `BSI`.
+        field: Tensor field of type `BSI`.
         index_i: Position of the first index in `I`.
         index_j: Position of the second index in `I`, in the same basis as index_i.
 
     Returns:
-        Field of type `BSI` without the two indices.
+        Tensor field of type `BSI` without the two indices.
     """
     if field.indices_type[index_i] == field.indices_type[index_j]:
         raise ValueError(f"indices {index_i} and {index_j} of {field.type!r} "
@@ -144,17 +161,18 @@ def trace(field: Field, index_i: int, index_j: int) -> Field:
 
 
 def change_basis(field: Field, frame: Field, index: int) -> Field:
-    """Express one index of a field in a frame f_j = F^i_j e_i.
+    """Express one index of a field in a frame v_j = V^i_j E_i.
 
-    A lower index becomes T_j = T_i F^i_j and an upper index T^j = (F^-1)^j_i T^i.
+    A lower index, along E^i, becomes T_j = T_i V^i_j along v^j, and an upper index, along
+    E_i, becomes T^j = (V^-1)^j_i T^i along v_j.
 
     Args:
-        field: Field of type `BSI`.
-        frame: Frame of type `BSul`, where [..., :, i] is the i-th frame vector.
-        index: Position of the index in `I`, in the same basis as the frame's components.
+        field: Tensor field of type `BSI`.
+        frame: Frame v_j = V^i_j E_i.
+        index: Position of the index in `I`, in the basis E_i or E^i.
 
     Returns:
-        Field of type `BSI` with the index in the given frame.
+        Tensor field of type `BSI` with the index in the basis v_j or v^j.
     """
     if frame.indices_type != "ul":
         raise ValueError(f"a frame has an upper and a lower index, got {frame.indices_type!r}")

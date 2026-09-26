@@ -79,65 +79,66 @@ On a 2D grid of `H×W` points, with a batch of `B`:
 
 | shape | type | object | examples |
 |-------|------|--------|----------|
-| `[H,W]` | `ss` | (0,0)-tensor field, i.e. scalar field | image `f` |
-| `[H,W,2]` | `ssu` | (1,0)-tensor field, i.e. vector field | gradient `g^ij (e_j f) e_i ` |
-| `[H,W,2]` | `ssl` | (0,1)-tensor field, i.e. covector field | differential `e_i(f) e^i` |
-| `[H,W,2,2]` | `ssll` | (0,2)-tensor field, i.e. bilinear form field | metric `g_ij e^i ⊗ e^j`, Hessian `(∇ ∇ f)_ij e^i ⊗ e^j`, structure tensor `(S f)_ij e^i ⊗ e^j` |
-| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric `g^ij e_i ⊗ e_j` |
-| `[H,W,2,2]` | `ssul` | (1,1)-tensor field, i.e. linear map field | frame `F^i_j e_i ⊗ f^j`, linear mappings `A^i_j e_i ⊗ e^j` |
-| `[H,W,2,…,2]` | `ssl…l` | (0,k)-tensor field | k-th covariant derivative of a scalar field |
-| `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field  | difference tensor `D^i_kl e_i ⊗ e^k ⊗ e^l`|
+| `[H,W]` | `ss` | (0,0)-tensor field, i.e. scalar field | image $f$ |
+| `[H,W,2]` | `ssu` | (1,0)-tensor field, i.e. vector field | gradient $g^{ij} (e_j f)\, e_i$ |
+| `[H,W,2]` | `ssl` | (0,1)-tensor field, i.e. covector field | differential $(e_i f)\, e^i$ |
+| `[H,W,2,2]` | `ssll` | (0,2)-tensor field, i.e. bilinear form field | metric $g_{ij}\, e^i \otimes e^j$, Hessian $(\nabla\nabla f)_{ij}\, e^i \otimes e^j$, structure tensor $(Sf)_{ij}\, e^i \otimes e^j$ |
+| `[H,W,2,2]` | `ssuu` | (2,0)-tensor field | inverse metric $g^{ij}\, e_i \otimes e_j$ |
+| `[H,W,2,2]` | `ssul` | (1,1)-tensor field, i.e. linear map field | frame $V^i{}_j\, e_i \otimes v^j$, linear mappings $A^i{}_j\, e_i \otimes e^j$ |
+| `[H,W,2,…,2]` | `ssl…l` | (0,k)-tensor field | $k$-th covariant derivative $(\nabla^k f)_{i_1 \dots i_k}\, e^{i_1} \otimes \dots \otimes e^{i_k}$ of a scalar field |
+| `[H,W,2,2,2]` | `ssull` | (1,2)-tensor field | difference tensor $D^i{}_{kl}\, e_i \otimes e^k \otimes e^l$ |
 
 ## Functions
 
-`B` is any number of batch dimensions, `S` the spatial dimensions, and
-`I`, `J` any string of `u` and `l`.
+$e_i$ and $e^i$ are the grid basis and its dual, $E_i$ and $E^i$ any basis, and a frame is
+$v_j = V^i{}_j\, e_i$. For generic tensor fields, `B` is any number of batch dimensions, `S`
+the spatial dimensions, and `I`, `J` any string of `u` and `l`.
 
 ### `field.py`
 
 `Field(data, type)`, and:
 
-| function | takes | returns | computes |
-|----------|-------|---------|----------|
-| `tensor_product(a, b)` | `a: BSI`, `b: BSJ` | `BSIJ` | `a ⊗ b` |
-| `contract(a, i, b, j)` | `a: BSI`, `b: BSJ` | `BSIJ` without the pair | sum of index `i` of `a` with index `j` of `b` |
-| `trace(field, i, j)` | `field: BSI` | `BSI` without the pair | sum of indices `i` and `j` of `field` |
-| `change_basis(field, frame, index)` | `field: BSI`, `frame: BSul` | `BSI` | index `index` from the grid basis to the frame |
+| function | takes | returns |
+|----------|-------|---------|
+| `tensor_product(a, b)` | $a$ of type `BSI`, $b$ of type `BSJ`, in the same basis | $a \otimes b$ of type `BSIJ`, e.g. $a_i b_j\, E^i \otimes E^j$ |
+| `contract(a, i, b, j)` | $a$ of type `BSI`, $b$ of type `BSJ`, index `i` of $a$ and `j` of $b$ in the same basis | type `BSIJ` without the summed pair, e.g. $a^{ij} b_j\, E_i$ |
+| `trace(field, i, j)` | $T$ of type `BSI`, indices `i` and `j` in the same basis | type `BSI` without the summed pair, e.g. $T^i{}_i$ |
+| `change_basis(field, frame, index)` | $T$ of type `BSI` with index `index` in $E_i$ or $E^i$, frame $v_j = V^i{}_j\, E_i$ | type `BSI` with that index in $v_j$ or $v^j$ |
 
 ### `geometry.py`
 
-| function | takes | returns | computes |
-|----------|-------|---------|----------|
-| `partial_derivative(field)` | `field: BSI` | `BSIl` | `∇^flat T` |
-| `differential(field)` | `field: BS` | `BSl` | `df` |
-| `gradient(field, metric)` | `field: BS`, `metric: Sll` | `BSu` | `grad f = g^ij e_j(f) e_i` |
-| `inner_product(a, b, metric)` | `a, b: BSu` or `BSl`, `metric: Sll` | `BS` | `g_ij a^i b^j` or `g^ij a_i b_j` |
-| `norm2(field, metric)` | `field: BSu` or `BSl`, `metric: Sll` | `BS` | `inner_product(field, field, metric)` |
-| `levi_civita_difference_tensor(metric)` | `metric: Sll` | `Sull` | `D` of the Levi-Civita connection |
-| `weitzenbock_difference_tensor(frame)` | `frame: Sul` | `Sull` | `D` of the connection for which the frame is parallel |
-| `covariant_derivative(field, difference_tensor)` | `field: BSI`, `difference_tensor: Sull` | `BSIl` | `∇ T` with `∇ = ∇^flat + D` |
+| function | takes | returns |
+|----------|-------|---------|
+| `partial_derivative(field)` | $T$ of type `BSI` in $e_i$ and $e^i$ | $\nabla^\flat T$ of type `BSIl`, derivative index last |
+| `differential(field)` | scalar field $f$ | $df = (e_i f)\, e^i$ |
+| `gradient(field, metric)` | scalar field $f$, metric $g_{ij}\, e^i \otimes e^j$ | $\operatorname{grad} f = g^{ij} (e_j f)\, e_i$ |
+| `inner_product(a, b, metric)` | $a^i E_i$ and $b^i E_i$ (or $a_i E^i$ and $b_i E^i$), metric $g_{ij}\, E^i \otimes E^j$ | $g_{ij} a^i b^j$ (or $g^{ij} a_i b_j$) |
+| `norm2(field, metric)` | $a^i E_i$ (or $a_i E^i$), metric $g_{ij}\, E^i \otimes E^j$ | $g_{ij} a^i a^j$ (or $g^{ij} a_i a_j$) |
+| `levi_civita_difference_tensor(metric)` | metric $g_{ij}\, e^i \otimes e^j$ | $D^i{}_{jk}\, e_i \otimes e^j \otimes e^k$ of the Levi-Civita connection |
+| `weitzenbock_difference_tensor(frame)` | frame $v_j = V^i{}_j\, e_i$ | $D^i{}_{jk}\, e_i \otimes e^j \otimes e^k$ of the connection for which the frame is parallel |
+| `covariant_derivative(field, difference_tensor)` | $T$ of type `BSI` in $e_i$ and $e^i$, $D^i{}_{jk}\, e_i \otimes e^j \otimes e^k$ | $\nabla T$ of type `BSIl` with $\nabla = \nabla^\flat + D$, derivative index last |
 
 ### `frames.py`
 
-| function | takes | returns | computes |
-|----------|-------|---------|----------|
-| `eigenframe(form, metric)` | `form: BSll`, `metric: Sll` | `BSl`, `BSul` | stationary points of `F(v,v)` with `g(v,v) = 1` |
-| `singular_frames(form, metric)` | `form: BSll`, `metric: Sll` | `BSl`, `BSul`, `BSul` | `σ` and the left and right singular frames of `F` in `g` |
-| `structure_tensor_frame(field, sigma, metric)` | `field: BS`, `metric: Sll` | `BSl`, `BSul` | eigenframe of `df ⊗ df` blurred with `sigma` |
-| `hessian_frame(field, difference_tensor, metric)` | `field: BS`, `difference_tensor: Sull`, `metric: Sll` | `BSl`, `BSul` | eigenframe of `∇∇f` |
-| `constant_metric_in_frame(metric, frame)` | `metric: [n, n]`, `frame: Sul` | `Sll` | metric with components `G` in the frame |
-| `covariant_derivative_in_frame(field, frame, difference_tensor, order)` | `field: BSI`, `frame: BSul`, `difference_tensor: Sull` | `BSI` + `order` × `l` | `order`-th covariant derivative, in the frame basis |
+| function | takes | returns |
+|----------|-------|---------|
+| `eigenframe(form, metric)` | form $F_{ij}\, E^i \otimes E^j$, metric $g_{ij}\, E^i \otimes E^j$ | values $\lambda_j$ and frame $v_j = V^i{}_j\, E_i$, the stationary points of $F(v,v)$ with $g(v,v) = 1$ |
+| `singular_frames(form, metric)` | form $F_{ij}\, E^i \otimes E^j$, metric $g_{ij}\, E^i \otimes E^j$ | singular values $\sigma_j$, left frame $u_j = U^i{}_j\, E_i$ and right frame $v_j = V^i{}_j\, E_i$ |
+| `structure_tensor_frame(field, sigma, metric)` | scalar field $f$, blur `sigma`, metric $g_{ij}\, e^i \otimes e^j$ | values $\lambda_j$ and frame $v_j = V^i{}_j\, e_i$ of $df \otimes df$ blurred |
+| `hessian_frame(field, difference_tensor, metric)` | scalar field $f$, $D^i{}_{jk}\, e_i \otimes e^j \otimes e^k$, metric $g_{ij}\, e^i \otimes e^j$ | values $\lambda_j$ and frame $v_j = V^i{}_j\, e_i$ of $\nabla\nabla f$ |
+| `constant_metric_in_frame(metric, frame)` | `[n, n]` tensor $G$, frame $v_j = V^i{}_j\, e_i$ | metric $g_{ij}\, e^i \otimes e^j = G_{ij}\, v^i \otimes v^j$ |
+| `covariant_derivative_in_frame(field, frame, difference_tensor, order)` | $T$ of type `BSI` in $e_i$ and $e^i$, frame $v_j = V^i{}_j\, e_i$, $D^i{}_{jk}\, e_i \otimes e^j \otimes e^k$ | $\nabla^m T$ of type `BSI` + $m$ × `l` in $v_i$ and $v^i$, for $f$ the gauge derivatives $(\nabla^m f)(v_{i_1}, \dots, v_{i_m})$ |
 
 ### `m2.py`
 
-| function | takes | returns | computes |
-|----------|-------|---------|----------|
-| `left_invariant_frame(orientations, dx)` | number of orientations, grid step `dx` in y and x | `sssul` | forward, sideways and turn frame `A_1, A_2, A_3` of `M2 = R² × S¹` |
+| function | takes | returns |
+|----------|-------|---------|
+| `left_invariant_frame(orientations, dx)` | number of orientations, grid step `dx` in $y$ and $x$ | frame $A_j = V^i{}_j\, e_i$ of $M_2 = \mathbb{R}^2 \times S^1$, forward $A_0$, sideways $A_1$ and turn $A_2$ |
 
 ### `gaussian_blur.py`
 
-| function | takes | returns | computes |
-|----------|-------|---------|----------|
-| `gaussian_blur(field, sigma)` | `field: BSI` | `BSI` | Gaussian blur along `S`, periodic boundaries |
+| function | takes | returns |
+|----------|-------|---------|
+| `gaussian_blur(field, sigma)` | $T$ of type `BSI` in $e_i$ and $e^i$, standard deviation `sigma` in grid steps | type `BSI`, blurred along `S` with periodic boundaries |
 
 `make_figures.py` regenerates the figures.

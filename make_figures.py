@@ -65,8 +65,8 @@ def euclidean(n: int) -> Field:
 def ribbon_directions() -> tuple[torch.Tensor, torch.Tensor]:
     """Unit vectors across and through the ribbon, in the frame A.
 
-    Across is A_2. Through is orthogonal to it and to the core's tangent T = R A_1 + A_3 in
-    METRIC: the covector T × A_2 = (-1, 0, R) annihilates both, raised with the metric.
+    Across is A_1. Through is orthogonal to it and to the core's tangent T = R A_0 + A_2 in
+    METRIC: the covector T × A_1 = (-1, 0, R) annihilates both, raised with the metric.
     """
     across = torch.tensor([0.0, 1.0, 0.0])
     through = torch.linalg.solve(METRIC, torch.tensor([-1.0, 0.0, RADIUS]))
@@ -189,7 +189,7 @@ def ribbon_coordinates() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 def ribbon_volume(**arrays: torch.Tensor) -> pv.ImageData:
     """Arrays on the ribbon's grid as a volume in (x, y, XI θ).
 
-    A_1, A_2 and A_3 / XI are orthonormal in the metric, so in these coordinates it looks
+    A_0, A_1 and A_2 / XI are orthonormal in the metric, so in these coordinates it looks
     Euclidean.
     """
     center = (SIZE - 1) / 2 * SPACING
