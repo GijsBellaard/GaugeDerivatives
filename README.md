@@ -18,17 +18,17 @@ $$
 
 ```python
 import torch
-from frames import covariant_derivative_in_frame, structure_tensor_frame
-from gaussian_blur import gaussian_blur
-from geometry import levi_civita_difference_tensor
+from frames import structure_tensor_frame
+from geometry import covariant_derivative_in_frame, levi_civita_difference_tensor
+from grid import gaussian_blur
 
-H, W = 64, 64
-signal = torch.randn(H, W)                                 # [64, 64]
-signal = gaussian_blur(signal, sigma=2.0)                  # [64, 64]
-metric = torch.eye(2).reshape(1, 1, 2, 2)                  # [1, 1, 2, 2]
-difference_tensor = levi_civita_difference_tensor(metric)  # [1, 1, 2, 2, 2]
-eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [64, 64, 2], [64, 64, 2, 2]
-gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [64, 64, 2, 2]
+B, H, W = 4, 64, 64
+signal = torch.randn(B, H, W)                              # [4, 64, 64]
+signal = gaussian_blur(signal, 2.0, [1, 2])                # [4, 64, 64]
+metric = torch.eye(2).reshape(1, 1, 1, 2, 2)               # [1, 1, 1, 2, 2]
+difference_tensor = levi_civita_difference_tensor(metric)  # [1, 1, 1, 2, 2, 2]
+eigenvalues, gauge_frame = structure_tensor_frame(signal, 1.0, metric)  # [4, 64, 64, 2], [4, 64, 64, 2, 2]
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [4, 64, 64, 2, 2]
 ```
 
 ## Gauge Derivatives on  M2
@@ -37,18 +37,18 @@ gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, differenc
 
 ```python
 import torch
-from frames import constant_metric_in_frame, covariant_derivative_in_frame, hessian_frame
-from gaussian_blur import gaussian_blur
-from geometry import weitzenbock_difference_tensor
+from frames import hessian_frame
+from geometry import constant_metric_in_frame, covariant_derivative_in_frame, weitzenbock_difference_tensor
+from grid import gaussian_blur
 from m2 import left_invariant_frame
 
-O, H, W = 64, 64, 64
-signal = torch.randn(O, H, W)                                # [64, 64, 64]
-signal = gaussian_blur(signal, sigma=2.0)                    # [64, 64, 64]
-li_frame = left_invariant_frame(O)                           # [64, 1, 1, 3, 3]
-difference_tensor = weitzenbock_difference_tensor(li_frame)  # [64, 1, 1, 3, 3, 3]
+B, O, H, W = 4, 64, 64, 64
+signal = torch.randn(B, O, H, W)                             # [4, 64, 64, 64]
+signal = gaussian_blur(signal, 2.0, [1, 2, 3])               # [4, 64, 64, 64]
+li_frame = left_invariant_frame(O)                           # [1, 64, 1, 1, 3, 3]
+difference_tensor = weitzenbock_difference_tensor(li_frame)  # [1, 64, 1, 1, 3, 3, 3]
 G = torch.diag(torch.tensor([1.0, 4.0, 0.5]))
-metric = constant_metric_in_frame(G, li_frame)               # [64, 1, 1, 3, 3]
-values, gauge_frame = hessian_frame(signal, difference_tensor, metric)  # [64, 64, 64, 3], [64, 64, 64, 3, 3]
-gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [64, 64, 64, 3, 3]
+metric = constant_metric_in_frame(G, li_frame)               # [1, 64, 1, 1, 3, 3]
+values, gauge_frame = hessian_frame(signal, difference_tensor, metric)  # [4, 64, 64, 64, 3], [4, 64, 64, 64, 3, 3]
+gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, difference_tensor, 2)  # [4, 64, 64, 64, 3, 3]
 ```

@@ -1,51 +1,69 @@
 import torch
 
-from field import spatial_dims
+from grid import derivative
 
 
-def partial_derivative(
-    field: torch.Tensor,
-    dim: tuple[int, ...] | None = None
+def change_basis(
+    field: torch.Tensor, 
+    frame: torch.Tensor, 
+    index: int, 
+    kind: str
 ) -> torch.Tensor:
-    parts = [torch.zeros_like(field) if field.shape[d] == 1
-             else torch.gradient(field, dim=d)[0]
-             for d in (range(field.ndim) if dim is None else dim)]
-    return torch.stack(parts, dim=-1)
+    N = field.ndim
+    i = index % N
+    labels = list(range(N))
+    grid = list(range(frame.ndim - 2))
+    out = labels.copy()
+    out[i] = N
+    if kind == "l":
+        return torch.einsum(
+            field, labels,
+            frame, [*grid, i, N],
+            out
+        )  # T_..j.. = T_..i.. V^i_j
+    elif kind == "u":
+        return torch.einsum(
+            torch.linalg.inv(frame), [*grid, N, i],
+            field, labels,
+            out
+        )  # T^..j.. = (V^-1)^j_i T^..i..
+    else:
+        raise ValueError(f"kind must be 'l' or 'u', got {kind!r}")
 
 
-def differential(
-    field: torch.Tensor,
-    dim: tuple[int, ...] | None = None
+def constant_metric_in_frame(
+    metric: torch.Tensor, 
+    frame: torch.Tensor
 ) -> torch.Tensor:
-    return partial_derivative(field, dim)
+    inverse = torch.linalg.inv(frame)
+    return inverse.mT @ metric @ inverse
+
 
 def levi_civita_difference_tensor(metric: torch.Tensor) -> torch.Tensor:
-    dims = tuple(range(metric.ndim - 2))
-    derivative = partial_derivative(metric, dims)
-    term = (derivative.transpose(-1, -2)
-            + derivative
-            - derivative.movedim(-1, -3))
+    spatial_dims = list(range(1, metric.ndim - 2))
+    dg = derivative(metric, spatial_dims)
+    term = (dg.transpose(-1, -2)
+            + dg
+            - dg.movedim(-1, -3))
     inverse = torch.linalg.inv(metric)
     return 0.5 * torch.einsum("...ad,...dbc->...abc", inverse, term)
 
 
 def weitzenbock_difference_tensor(frame: torch.Tensor) -> torch.Tensor:
-    dims = tuple(range(frame.ndim - 2))
-    derivative = partial_derivative(frame, dims)
+    spatial_dims = list(range(1, frame.ndim - 2))
+    dV = derivative(frame, spatial_dims)
     coframe = torch.linalg.inv(frame)
-    return -torch.einsum("...ilj,...lk->...ijk", derivative, coframe)
+    return -torch.einsum("...ilj,...lk->...ijk", dV, coframe)
 
 
 def covariant_derivative(
     field: torch.Tensor,
     difference_tensor: torch.Tensor,
-    indices: str = "",
-    dim: tuple[int, ...] | None = None
+    indices: str = ""
 ) -> torch.Tensor:
-    # Label the indices of the field 0..p-1 and the derivative index p. The corrected
-    # index is summed with the difference tensor over label p + 1.
     p = len(indices)
-    data = partial_derivative(field, spatial_dims(field, indices, dim))
+    spatial_dims = list(range(1, field.ndim - p))
+    data = derivative(field, spatial_dims)
     for i, kind in enumerate(indices):
         labels = list(range(p))
         labels[i] = p + 1
@@ -62,3 +80,18 @@ def covariant_derivative(
                 [..., *range(p + 1)]
             )  # - D^l_ki T_..l..
     return data
+
+
+def covariant_derivative_in_frame(
+    field: torch.Tensor, 
+    frame: torch.Tensor,
+    difference_tensor: torch.Tensor, 
+    order: int,
+    indices: str = ""
+) -> torch.Tensor:
+    for _ in range(order):
+        field = covariant_derivative(field, difference_tensor, indices)
+        indices += "l"
+    for index, kind in enumerate(indices):
+        field = change_basis(field, frame, index - len(indices), kind)
+    return field

@@ -1,12 +1,18 @@
 import torch
 
 
+def derivative(field: torch.Tensor, dims: list[int]) -> torch.Tensor:
+    parts = [torch.zeros_like(field) if field.shape[d] == 1
+             else torch.gradient(field, dim=d)[0]
+             for d in dims]
+    return torch.stack(parts, dim=-1)
 
-def gaussian_blur(field: torch.Tensor, sigma: float,
-                  dim: tuple[int, ...] | None = None) -> torch.Tensor:
-    dims = tuple(range(field.ndim)) if dim is None else dim
 
-    # Transfer function exp(-sigma^2 |omega|^2 / 2) with omega = 2 pi f, f from fftfreq.
+def gaussian_blur(
+    field: torch.Tensor, 
+    sigma: float,
+    dims: list[int]
+) -> torch.Tensor:
     frequency_squared = torch.zeros(field.ndim * [1], dtype=field.dtype, device=field.device)
     for d in dims:
         shape = field.ndim * [1]

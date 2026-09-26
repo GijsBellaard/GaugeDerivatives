@@ -15,9 +15,10 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
-from frames import constant_metric_in_frame, covariant_derivative_in_frame, structure_tensor_frame
-from gaussian_blur import gaussian_blur
-from geometry import levi_civita_difference_tensor, weitzenbock_difference_tensor
+from frames import structure_tensor_frame
+from geometry import (constant_metric_in_frame, covariant_derivative_in_frame,
+                      levi_civita_difference_tensor, weitzenbock_difference_tensor)
+from grid import gaussian_blur
 from m2 import left_invariant_frame
 
 IMAGES = Path(__file__).parent / "images"
@@ -56,7 +57,7 @@ def load_image() -> torch.Tensor:
 
 
 def euclidean(n: int) -> torch.Tensor:
-    return torch.eye(n).reshape(*[1] * n, n, n)
+    return torch.eye(n).reshape(1, *[1] * n, n, n)
 
 
 def ribbon_directions() -> tuple[torch.Tensor, torch.Tensor]:
@@ -118,13 +119,14 @@ def derivative_cmap(name: str, color: str) -> Colormap:
 
 
 def make_r2_figure(path: Path) -> None:
-    blurred = gaussian_blur(load_image(), sigma=SIGMA)
-    metric = euclidean(blurred.ndim)
+    blurred = gaussian_blur(load_image()[None], SIGMA, [1, 2])
+    metric = euclidean(2)
     levi_civita = levi_civita_difference_tensor(metric)
     _, frame = structure_tensor_frame(blurred, FRAME_SIGMA, metric)
     # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
-    first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1)[..., 1].abs()
-    second = covariant_derivative_in_frame(blurred, frame, levi_civita, 2)[..., 1, 1]
+    first = covariant_derivative_in_frame(blurred, frame, levi_civita, 1)[0, ..., 1].abs()
+    second = covariant_derivative_in_frame(blurred, frame, levi_civita, 2)[0, ..., 1, 1]
+    blurred, frame = blurred[0], frame[0]
 
     fig, axes = plt.subplots(2, 2, figsize=(9, 8.2))
     (signal_ax, frame_ax), (first_ax, second_ax) = axes
@@ -149,7 +151,7 @@ def make_r2_figure(path: Path) -> None:
 
 def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     A = left_invariant_frame(ORIENTATIONS, SPACING)
-    f = helical_ribbon(*ribbon_coordinates())
+    f = helical_ribbon(*ribbon_coordinates())[None]
     _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
     return f, frame, weitzenbock_difference_tensor(A)
 
@@ -280,7 +282,8 @@ def turntable(plotters: list[pv.Plotter], frames: int) -> list[list[np.ndarray]]
 def make_m2_figure(path: Path) -> None:
     f, frame, difference_tensor = ribbon()
     # The sign of each frame vector is arbitrary, hence |(δf)_i|.
-    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1).abs()
+    first = covariant_derivative_in_frame(f, frame, difference_tensor, 1)[0].abs()
+    f, frame = f[0], frame[0]
     limit = first[..., RIBBON_DIRECTIONS].max().item()
     names = [f"d{i}" for i in RIBBON_DIRECTIONS]
     volume = ribbon_volume(f=f, **{name: first[..., i]

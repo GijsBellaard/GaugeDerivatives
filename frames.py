@@ -1,8 +1,7 @@
 import torch
 
-from field import change_basis, spatial_dims
-from gaussian_blur import gaussian_blur
-from geometry import covariant_derivative, differential
+from geometry import covariant_derivative
+from grid import derivative, gaussian_blur
 
 
 def _whiten(
@@ -40,47 +39,21 @@ def singular_frames(
 def structure_tensor_frame(
     field: torch.Tensor, 
     sigma: float, 
-    metric: torch.Tensor,
-    dim: tuple[int, ...] | None = None
+    metric: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    df = differential(field, dim)
+    spatial_dims = list(range(1, field.ndim))
+    df = derivative(field, spatial_dims)
     structure_tensor = df[..., :, None] * df[..., None, :]
-    dims = spatial_dims(field, "", dim)
-    structure_tensor = gaussian_blur(structure_tensor, sigma, dims)
+    structure_tensor = gaussian_blur(structure_tensor, sigma, spatial_dims)
     return eigenframe(structure_tensor, metric)
 
 
 def hessian_frame(
     field: torch.Tensor, 
     difference_tensor: torch.Tensor, 
-    metric: torch.Tensor,
-    dim: tuple[int, ...] | None = None
+    metric: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    dims = spatial_dims(field, "", dim)
-    hessian = covariant_derivative(differential(field, dims), difference_tensor, "l", dims)
+    spatial_dims = list(range(1, field.ndim))
+    df = derivative(field, spatial_dims)
+    hessian = covariant_derivative(df, difference_tensor, "l")
     return eigenframe(hessian, metric)
-
-
-def covariant_derivative_in_frame(
-    field: torch.Tensor, 
-    frame: torch.Tensor,
-    difference_tensor: torch.Tensor, 
-    order: int,
-    indices: str = "",
-    dim: tuple[int, ...] | None = None
-) -> torch.Tensor:
-    dims = spatial_dims(field, indices, dim)
-    for _ in range(order):
-        field = covariant_derivative(field, difference_tensor, indices, dims)
-        indices += "l"
-    for index, kind in enumerate(indices):
-        field = change_basis(field, frame, index - len(indices), kind, dims)
-    return field
-
-
-def constant_metric_in_frame(
-    metric: torch.Tensor, 
-    frame: torch.Tensor
-) -> torch.Tensor:
-    inverse = torch.linalg.inv(frame)
-    return inverse.mT @ metric @ inverse
