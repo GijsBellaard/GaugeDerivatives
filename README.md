@@ -6,10 +6,11 @@ A _field_ is a tensor-valued signal on a manifold.
 A _gauge frame_ is a basis of vector fields derived from a scalar field, e.g. from its structure tensor or Hessian.
 A _gauge derivative_ of a field is a derivative in a gauge frame direction.
 
-More formally, let $`M`$ be an $`n`$-dimensional manifold, $`\nabla : \Gamma(T^{(p,q)}M) \to \Gamma(T^{(p,q+1)} M)`$ the total covariant derivative on tensor fields (induced by some connection), and $`v_0, \dots, v_{n-1} \in \Gamma(T M)`$ a gauge frame obtained from a scalar field $`f : M \to \mathbb{R}`$.
-The gauge derivative of signature $`(i_1, \dots i_m)`$ is defined as
+More formally, let $M$ be an $n$-dimensional manifold, $\nabla : \Gamma(T^{(p,q)}M) \to \Gamma(T^{(p,q+1)} M)$ the total covariant derivative on tensor fields (induced by some connection), and $v_0, \dots, v_{n-1} \in \Gamma(T M)$ a gauge frame obtained from a scalar field $f : M \to \mathbb{R}$.
+The gauge derivative of signature $(i_1, \dots, i_m)$ is defined as
+
 $$
-    (\delta f)_{(i_1, \dots i_m)} := (\nabla^m f)(v_{i_1}, \dots, v_{i_m})
+(\delta f)_{(i_1, \dots, i_m)} := (\nabla^m f)(v_{i_1}, \dots, v_{i_m})
 $$
 
 ## Gauge Derivatives on R2
