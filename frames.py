@@ -37,9 +37,9 @@ def singular_frames(
 
 
 def structure_tensor_frame(
-    field: torch.Tensor, 
-    sigma: float, 
-    metric: torch.Tensor
+    field: torch.Tensor,
+    metric: torch.Tensor,
+    sigma: float = 1.0
 ) -> tuple[torch.Tensor, torch.Tensor]:
     spatial_dims = list(range(1, field.ndim))
     df = derivative(field, spatial_dims)

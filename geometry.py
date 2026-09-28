@@ -85,8 +85,8 @@ def covariant_derivative(
 def covariant_derivative_in_frame(
     field: torch.Tensor, 
     frame: torch.Tensor,
-    connection: torch.Tensor, 
-    order: int,
+    connection: torch.Tensor,
+    order: int = 1,
     indices: str = ""
 ) -> torch.Tensor:
     for _ in range(order):

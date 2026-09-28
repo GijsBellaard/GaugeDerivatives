@@ -160,9 +160,9 @@ def make_r2_figure(path: Path) -> None:
     f = circular_waves().unsqueeze(0)
     metric = euclidean(2)
     levi_civita = levi_civita_connection(metric)
-    _, frame = structure_tensor_frame(f, FRAME_SIGMA, metric)
-    first = covariant_derivative_in_frame(f, frame, levi_civita, 1)[0, ..., 1]
-    second = covariant_derivative_in_frame(f, frame, levi_civita, 2)[0, ..., 1, 1]
+    _, frame = structure_tensor_frame(f, metric, FRAME_SIGMA)
+    first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
+    second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
 
     fig, axes = plt.subplots(2, 2, figsize=(9, 8.2))
     show_flat_panels(axes, f[0], frame[0], first, second, R2_STEP, frame_length=1)
@@ -191,9 +191,9 @@ def make_poincare_figure(path: Path) -> None:
     f = horocycle_waves().unsqueeze(0)
     metric = poincare_metric(DISK_SIZE)
     levi_civita = levi_civita_connection(metric)
-    _, frame = structure_tensor_frame(f, FRAME_SIGMA, metric)
-    first = covariant_derivative_in_frame(f, frame, levi_civita, 1)[0, ..., 1]
-    second = covariant_derivative_in_frame(f, frame, levi_civita, 2)[0, ..., 1, 1]
+    _, frame = structure_tensor_frame(f, metric, FRAME_SIGMA)
+    first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
+    second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
     outside = disk_coordinates().abs() > DISK_RADIUS
     shown = lambda image: image.masked_fill(outside, torch.nan)
 
@@ -212,7 +212,7 @@ def make_poincare_figure(path: Path) -> None:
 def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     A = m2_natural_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates()).unsqueeze(0)
-    _, frame = structure_tensor_frame(f, RIBBON_SIGMA, constant_metric_in_frame(METRIC, A))
+    _, frame = structure_tensor_frame(f, constant_metric_in_frame(METRIC, A), RIBBON_SIGMA)
     return f, frame, weitzenbock_connection(A)
 
 
@@ -342,7 +342,7 @@ def turntable(plotters: list[pv.Plotter], frames: int,
 
 def make_m2_figure(path: Path) -> None:
     f, frame, connection = ribbon()
-    first = covariant_derivative_in_frame(f, frame, connection, 1)[0].abs()
+    first = covariant_derivative_in_frame(f, frame, connection, order=1)[0].abs()
     f, frame = f[0], frame[0]
     limit = first[..., RIBBON_DIRECTIONS].max().item()
     names = [f"d{i}" for i in RIBBON_DIRECTIONS]
@@ -466,9 +466,9 @@ def make_s2_figure(path: Path) -> None:
     metric = sphere_metric(*SPHERE_GRID)
     f_padded, metric_padded = pad_sphere(f), pad_sphere(metric)
     levi_civita = levi_civita_connection(metric_padded)
-    _, frame = structure_tensor_frame(f_padded, FRAME_SIGMA, metric_padded)
-    first = covariant_derivative_in_frame(f_padded, frame, levi_civita, 1)[..., 1]
-    second = covariant_derivative_in_frame(f_padded, frame, levi_civita, 2)[..., 1, 1]
+    _, frame = structure_tensor_frame(f_padded, metric_padded, FRAME_SIGMA)
+    first = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=1)[..., 1]
+    second = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=2)[..., 1, 1]
     first, second = crop_sphere(first)[0].abs(), crop_sphere(second)[0]
     f, frame = f[0], crop_sphere(frame)[0]
     first_limit = first.quantile(0.99).item()
