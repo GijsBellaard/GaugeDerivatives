@@ -14,7 +14,7 @@ import pyvista as pv
 import torch
 from PIL import Image
 
-from frames import structure_tensor_frame
+from frames import eigenframe, structure_tensor
 from geometry import (constant_metric_in_frame, covariant_derivative_in_frame,
                       levi_civita_connection, weitzenbock_connection)
 from manifolds import m2_natural_frame, poincare_metric, sphere_metric
@@ -160,7 +160,8 @@ def make_r2_figure(path: Path) -> None:
     f = circular_waves().unsqueeze(0)
     metric = euclidean(2)
     levi_civita = levi_civita_connection(metric)
-    _, frame = structure_tensor_frame(f, metric, FRAME_SIGMA)
+    form = structure_tensor(f, FRAME_SIGMA)
+    _, frame = eigenframe(form, metric)
     first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
     second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
 
@@ -191,7 +192,8 @@ def make_poincare_figure(path: Path) -> None:
     f = horocycle_waves().unsqueeze(0)
     metric = poincare_metric(DISK_SIZE)
     levi_civita = levi_civita_connection(metric)
-    _, frame = structure_tensor_frame(f, metric, FRAME_SIGMA)
+    form = structure_tensor(f, FRAME_SIGMA)
+    _, frame = eigenframe(form, metric)
     first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
     second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
     outside = disk_coordinates().abs() > DISK_RADIUS
@@ -212,7 +214,8 @@ def make_poincare_figure(path: Path) -> None:
 def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     A = m2_natural_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates()).unsqueeze(0)
-    _, frame = structure_tensor_frame(f, constant_metric_in_frame(METRIC, A), RIBBON_SIGMA)
+    form = structure_tensor(f, RIBBON_SIGMA)
+    _, frame = eigenframe(form, constant_metric_in_frame(METRIC, A))
     return f, frame, weitzenbock_connection(A)
 
 
@@ -466,7 +469,8 @@ def make_s2_figure(path: Path) -> None:
     metric = sphere_metric(*SPHERE_GRID)
     f_padded, metric_padded = pad_sphere(f), pad_sphere(metric)
     levi_civita = levi_civita_connection(metric_padded)
-    _, frame = structure_tensor_frame(f_padded, metric_padded, FRAME_SIGMA)
+    form = structure_tensor(f_padded, FRAME_SIGMA)
+    _, frame = eigenframe(form, metric_padded)
     first = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=1)[..., 1]
     second = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=2)[..., 1, 1]
     first, second = crop_sphere(first)[0].abs(), crop_sphere(second)[0]

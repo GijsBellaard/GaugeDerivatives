@@ -23,37 +23,37 @@ def eigenframe(
     return values, basis @ w
 
 
-def singular_frames(
+def squared_form(
     form: torch.Tensor,
-    metric: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    # Solve in a g-orthonormal basis E, then map back with v = E w.
-    basis, F = _whiten(form, metric)
-    u, sigma, vh = torch.linalg.svd(F)
-    sigma = sigma.flip(-1)
-    left = basis @ u.flip(-1)
-    right = basis @ vh.mT.flip(-1)
-    return sigma, left, right
-
-
-def structure_tensor_frame(
-    field: torch.Tensor,
     metric: torch.Tensor,
+    slot: int = 0
+) -> torch.Tensor:
+    if slot == 1:
+        form = form.mT
+    elif slot != 0:
+        raise ValueError(f"slot must be 0 or 1, got {slot!r}")
+    return form.mT @ torch.linalg.inv(metric) @ form
+
+
+def structure_tensor(
+    field: torch.Tensor,
     sigma: float = 1.0
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     spatial_dims = list(range(1, field.ndim))
     df = derivative(field, spatial_dims)
-    structure_tensor = torch.einsum("...i,...j->...ij", df, df)
-    structure_tensor = gaussian_blur(structure_tensor, sigma, spatial_dims)
-    return eigenframe(structure_tensor, metric)
+    form = torch.einsum("...i,...j->...ij", df, df)
+    return gaussian_blur(form, sigma, spatial_dims)
 
 
-def hessian_frame(
-    field: torch.Tensor, 
-    connection: torch.Tensor, 
-    metric: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
+def hessian_structure_tensor(
+    field: torch.Tensor,
+    connection: torch.Tensor,
+    metric: torch.Tensor,
+    sigma: float = 1.0,
+    slot: int = 0
+) -> torch.Tensor:
     spatial_dims = list(range(1, field.ndim))
     df = derivative(field, spatial_dims)
     hessian = covariant_derivative(df, connection, "l")
-    return eigenframe(hessian, metric)
+    form = squared_form(hessian, metric, slot)
+    return gaussian_blur(form, sigma, spatial_dims)

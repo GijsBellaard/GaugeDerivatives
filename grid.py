@@ -13,11 +13,14 @@ def gaussian_blur(
     sigma: float,
     dims: list[int]
 ) -> torch.Tensor:
+    # The real FFT halves the last dim, so that one gets rfftfreq.
+    sizes = [field.shape[d] for d in dims]
     frequency_squared = torch.zeros(field.ndim * [1], dtype=field.dtype, device=field.device)
     for d in dims:
+        fftfreq = torch.fft.rfftfreq if d == dims[-1] else torch.fft.fftfreq
+        axis = fftfreq(field.shape[d], dtype=field.dtype, device=field.device)
         shape = field.ndim * [1]
-        shape[d] = field.shape[d]
-        axis = torch.fft.fftfreq(field.shape[d], dtype=field.dtype, device=field.device)
+        shape[d] = len(axis)
         frequency_squared = frequency_squared + axis.reshape(shape).square()
     decay = torch.exp(-2 * (torch.pi * sigma) ** 2 * frequency_squared)
-    return torch.fft.ifftn(torch.fft.fftn(field, dim=dims) * decay, dim=dims).real
+    return torch.fft.irfftn(torch.fft.rfftn(field, dim=dims) * decay, s=sizes, dim=dims)
