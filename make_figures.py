@@ -17,6 +17,7 @@ from PIL import Image
 from frames import eigenframe, structure_field
 from geometry import (constant_metric_in_frame, covariant_derivative_in_frame,
                       levi_civita_connection, weitzenbock_connection)
+from lifting import cake_wavelets, lift
 from manifolds import m2_natural_frame, poincare_metric, sphere_metric
 
 IMAGES = Path(__file__).parent / "images"
@@ -58,6 +59,14 @@ SPHERE_TILT = math.pi / 3    # Polar angle of the centre of the rings
 SPHERE_GRID = (256, 512)     # Grid of the sphere over (θ, φ)
 SPHERE_PAD = 8               # Grid steps added beyond the poles and around φ while computing
 SPHERE_STEP = 16             # Draw a frame every SPHERE_STEP-th row and column
+
+CAKE_SIZE = 256              # Grid of the lifted image, [CAKE_SIZE, CAKE_SIZE]
+CAKE_ORIENTATIONS = 16       # Orientations of the cake wavelets over [0, 2π)
+CAKE_ANGULAR_SIGMA = 0.15    # Standard deviation of the blur of the cakes in θ, in radians
+CAKE_RADIAL_SIGMA = 0.03     # Standard deviation of their blur in |ω|, in cycles per grid step
+CAKE_RADIUS = 72             # Radius of the ring in the toy image, in grid steps
+CAKE_CROP = 24               # Half-width of the wavelet panels, in grid steps
+CAKE_SHOWN = (0, 2, 4, 6)    # Orientations k shown, at θ = 2πk / CAKE_ORIENTATIONS
 
 
 def euclidean(n: int) -> torch.Tensor:
@@ -509,9 +518,77 @@ def make_s2_figure(path: Path) -> None:
     save_animation(path, fig, shown, images)
 
 
+def ring_and_line() -> torch.Tensor:
+    # A ring of radius CAKE_RADIUS and a diagonal line through it, both with a Gaussian profile.
+    t = torch.arange(CAKE_SIZE) - CAKE_SIZE / 2
+    y, x = torch.meshgrid(t, t, indexing="ij")
+    ring = torch.exp(-(torch.hypot(y, x) - CAKE_RADIUS) ** 2 / (2 * 2.0**2))
+    line = torch.exp(-((y - x) / math.sqrt(2)) ** 2 / (2 * 2.0**2))
+    return torch.maximum(ring, line)
+
+
+def show_panel(ax, image, title: str, cmap: str | Colormap, vmin: float, vmax: float,
+               colorbar: bool = True) -> None:
+    # Every panel gets a colorbar so that all panels have the same size, shown or not.
+    ax.imshow(image, cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.set_title(title, fontsize=12)
+    ax.set_axis_off()
+    add_colorbar(ax, cmap, vmin, vmax).ax.set_visible(colorbar)
+
+
+def show_row_label(ax, label: str) -> None:
+    ax.text(0.5, 0.5, label, fontsize=13, ha="center", va="center", transform=ax.transAxes)
+    ax.set_axis_off()
+
+
+def make_cake_figure(path: Path) -> None:
+    # Columns are the orientations shown and their sum over all θ; rows are the cakes in the
+    # Fourier domain, the wavelets in space, and the lift of f.
+    f = ring_and_line()
+    wavelets = cake_wavelets(CAKE_SIZE, CAKE_ORIENTATIONS, CAKE_ANGULAR_SIGMA,
+                             CAKE_RADIAL_SIGMA)                                # [O, N, N]
+    spectra = torch.fft.fft2(wavelets).real  # Real, as the cakes are.
+    score = lift(f.unsqueeze(0), wavelets)[0].real                            # [O, N, N]
+    c, centre = CAKE_CROP, CAKE_SIZE // 2
+    crop = lambda image: torch.fft.fftshift(image, dim=(-2, -1))[..., centre - c:centre + c,
+                                                                  centre - c:centre + c]
+    labels = ["0", r"\pi/4", r"\pi/2", r"3\pi/4", r"\pi", r"5\pi/4", r"3\pi/2", r"7\pi/4"]
+    thetas = [labels[8 * k // CAKE_ORIENTATIONS] for k in CAKE_SHOWN]
+    last = len(CAKE_SHOWN) - 1
+
+    fig, axes = plt.subplots(3, len(CAKE_SHOWN) + 2, figsize=(20, 10))
+    show_row_label(axes[0, 0], "Wavelets in\nthe Fourier\ndomain")
+    show_row_label(axes[1, 0], "Wavelets in\nthe spatial\ndomain")
+    show_panel(axes[2, 0], f, "$f$", "gray", 0, 1, colorbar=False)
+
+    for i, (k, theta) in enumerate(zip(CAKE_SHOWN, thetas)):
+        show_panel(axes[0, i + 1], torch.fft.fftshift(spectra[k]), rf"$\hat\psi_{{{theta}}}$",
+                   "magma", 0, 1, colorbar=False)
+    show_panel(axes[0, -1], torch.fft.fftshift(spectra.sum(0)), r"$\sum_\theta \hat\psi_\theta$",
+               "magma", 0, 1)
+
+    limit = crop(wavelets[list(CAKE_SHOWN)].real).abs().max().item()
+    for i, (k, theta) in enumerate(zip(CAKE_SHOWN, thetas)):
+        show_panel(axes[1, i + 1], crop(wavelets[k].real), rf"$\mathrm{{Re}}\,\psi_{{{theta}}}$",
+                   "RdBu_r", -limit, limit, colorbar=i == last)
+    total = crop(wavelets.sum(0).real)
+    total_limit = total.abs().max().item()
+    show_panel(axes[1, -1], total, r"$\sum_\theta \mathrm{Re}\,\psi_\theta$", "RdBu_r",
+               -total_limit, total_limit)
+
+    limit = score[list(CAKE_SHOWN)].abs().quantile(0.99).item()
+    for i, (k, theta) in enumerate(zip(CAKE_SHOWN, thetas)):
+        show_panel(axes[2, i + 1], score[k], rf"$\mathrm{{Re}}\,(\psi_{{{theta}}} * f)$",
+                   "RdBu_r", -limit, limit, colorbar=i == last)
+    show_panel(axes[2, -1], score.sum(0), r"$\sum_\theta \mathrm{Re}\,(\psi_\theta * f)$",
+               "gray", 0, 1)
+    save_figure(fig, path)
+
+
 if __name__ == "__main__":
     IMAGES.mkdir(exist_ok=True)
     make_r2_figure(IMAGES / "r2.svg")
     make_poincare_figure(IMAGES / "poincare.svg")
     make_m2_figure(IMAGES / "m2.webp")
     make_s2_figure(IMAGES / "s2.webp")
+    make_cake_figure(IMAGES / "cake.svg")

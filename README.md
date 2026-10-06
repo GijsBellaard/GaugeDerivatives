@@ -105,3 +105,19 @@ values, gauge_frame = eigenframe(structure, metric)  # [4, 64, 64, 64, 3], [4, 6
 first_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=1)  # [4, 64, 64, 64, 3]
 second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=2)  # [4, 64, 64, 64, 3, 3]
 ```
+## Lifting to M2 with Cake Wavelets
+
+![cake wavelets and the lift of an image to M2](images/cake.svg)
+
+```python
+import torch
+from grid import gaussian_blur
+from lifting import cake_wavelets, lift
+
+B, O, N = 4, 64, 64
+image = torch.randn(B, N, N)                                             # [4, 64, 64]
+image = gaussian_blur(image, 2.0, [1, 2])                                # [4, 64, 64]
+wavelets = cake_wavelets(N, O, angular_sigma=0.15, radial_sigma=0.03)    # [64, 64, 64]
+orientation_score = lift(image, wavelets)                                # [4, 64, 64, 64]
+signal = orientation_score.real                                          # [4, 64, 64, 64], a signal on M2
+```
