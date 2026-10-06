@@ -19,7 +19,7 @@ $$
 
 ```python
 import torch
-from frames import eigenframe, structure_tensor
+from frames import eigenframe, structure_field
 from geometry import covariant_derivative_in_frame, levi_civita_connection
 from grid import gaussian_blur
 
@@ -28,9 +28,9 @@ signal = torch.randn(B, H, W)                 # [4, 64, 64]
 signal = gaussian_blur(signal, 2.0, [1, 2])   # [4, 64, 64]
 metric = torch.eye(2).reshape(1, 1, 1, 2, 2)  # [1, 1, 1, 2, 2]
 connection = levi_civita_connection(metric)   # [1, 1, 1, 2, 2, 2]
-form = structure_tensor(signal, sigma=1.0)  # [4, 64, 64, 2, 2]
-# form = hessian_structure_tensor(signal, connection, metric, sigma=1.0)
-values, gauge_frame = eigenframe(form, metric)  # [4, 64, 64, 2], [4, 64, 64, 2, 2]
+structure = structure_field(signal, metric, sigma=1.0)  # [4, 64, 64, 2, 2]
+# structure = hessian_field(signal, connection, metric, sigma=1.0)
+values, gauge_frame = eigenframe(structure, metric)  # [4, 64, 64, 2], [4, 64, 64, 2, 2]
 first_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=1)  # [4, 64, 64, 2]
 second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=2)  # [4, 64, 64, 2, 2]
 ```
@@ -41,7 +41,7 @@ second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_fra
 
 ```python
 import torch
-from frames import eigenframe, structure_tensor
+from frames import eigenframe, structure_field
 from geometry import covariant_derivative_in_frame, levi_civita_connection
 from grid import gaussian_blur
 from manifolds import poincare_metric
@@ -51,9 +51,9 @@ signal = torch.randn(B, N, N)                # [4, 256, 256]
 signal = gaussian_blur(signal, 2.0, [1, 2])  # [4, 256, 256]
 metric = poincare_metric(N)                  # [1, 256, 256, 2, 2]
 connection = levi_civita_connection(metric)  # [1, 256, 256, 2, 2, 2]
-form = structure_tensor(signal, sigma=1.0)  # [4, 256, 256, 2, 2]
-# form = hessian_structure_tensor(signal, connection, metric, sigma=1.0)
-values, gauge_frame = eigenframe(form, metric)  # [4, 256, 256, 2], [4, 256, 256, 2, 2]
+structure = structure_field(signal, metric, sigma=1.0)  # [4, 256, 256, 2, 2]
+# structure = hessian_field(signal, connection, metric, sigma=1.0)
+values, gauge_frame = eigenframe(structure, metric)  # [4, 256, 256, 2], [4, 256, 256, 2, 2]
 first_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=1)  # [4, 256, 256, 2]
 second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=2)  # [4, 256, 256, 2, 2]
 ```
@@ -64,7 +64,7 @@ second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_fra
 
 ```python
 import torch
-from frames import eigenframe, structure_tensor
+from frames import eigenframe, structure_field
 from geometry import covariant_derivative_in_frame, levi_civita_connection
 from grid import gaussian_blur
 from manifolds import sphere_metric
@@ -74,9 +74,9 @@ signal = torch.randn(B, T, P)                # [4, 128, 256]
 signal = gaussian_blur(signal, 2.0, [1, 2])  # [4, 128, 256]
 metric = sphere_metric(T, P)                 # [1, 128, 256, 2, 2]
 connection = levi_civita_connection(metric)  # [1, 128, 256, 2, 2, 2]
-form = structure_tensor(signal, sigma=1.0)  # [4, 128, 256, 2, 2]
-# form = hessian_structure_tensor(signal, connection, metric, sigma=1.0)
-values, gauge_frame = eigenframe(form, metric)  # [4, 128, 256, 2], [4, 128, 256, 2, 2]
+structure = structure_field(signal, metric, sigma=1.0)  # [4, 128, 256, 2, 2]
+# structure = hessian_field(signal, connection, metric, sigma=1.0)
+values, gauge_frame = eigenframe(structure, metric)  # [4, 128, 256, 2], [4, 128, 256, 2, 2]
 first_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=1)  # [4, 128, 256, 2]
 second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=2)  # [4, 128, 256, 2, 2]
 ```
@@ -87,7 +87,7 @@ second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_fra
 
 ```python
 import torch
-from frames import eigenframe, structure_tensor
+from frames import eigenframe, structure_field
 from geometry import constant_metric_in_frame, covariant_derivative_in_frame, weitzenbock_connection
 from grid import gaussian_blur
 from manifolds import m2_natural_frame
@@ -99,9 +99,9 @@ natural_frame = m2_natural_frame(O)                  # [1, 64, 1, 1, 3, 3]
 connection = weitzenbock_connection(natural_frame)   # [1, 64, 1, 1, 3, 3, 3]
 G = torch.diag(torch.tensor([1.0, 4.0, 0.5]))
 metric = constant_metric_in_frame(G, natural_frame)  # [1, 64, 1, 1, 3, 3]
-form = structure_tensor(signal, sigma=1.0)  # [4, 64, 64, 64, 3, 3]
-# form = hessian_structure_tensor(signal, connection, metric, sigma=1.0)
-values, gauge_frame = eigenframe(form, metric)  # [4, 64, 64, 64, 3], [4, 64, 64, 64, 3, 3]
+structure = structure_field(signal, metric, sigma=1.0)  # [4, 64, 64, 64, 3, 3]
+# structure = hessian_field(signal, connection, metric, sigma=1.0)
+values, gauge_frame = eigenframe(structure, metric)  # [4, 64, 64, 64, 3], [4, 64, 64, 64, 3, 3]
 first_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=1)  # [4, 64, 64, 64, 3]
 second_order_gauge_derivatives = covariant_derivative_in_frame(signal, gauge_frame, connection, order=2)  # [4, 64, 64, 64, 3, 3]
 ```

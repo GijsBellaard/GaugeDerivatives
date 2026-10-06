@@ -56,6 +56,12 @@ def weitzenbock_connection(frame: torch.Tensor) -> torch.Tensor:
     return -torch.einsum("...ilj,...lk->...ijk", dV, coframe)
 
 
+def grad(field: torch.Tensor, metric: torch.Tensor) -> torch.Tensor:
+    spatial_dims = list(range(1, field.ndim))
+    df = derivative(field, spatial_dims)
+    return torch.einsum("...ij,...j->...i", torch.linalg.inv(metric), df)  # g^ij d_j f
+
+
 def covariant_derivative(
     field: torch.Tensor,
     connection: torch.Tensor,

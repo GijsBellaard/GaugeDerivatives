@@ -14,7 +14,7 @@ import pyvista as pv
 import torch
 from PIL import Image
 
-from frames import eigenframe, structure_tensor
+from frames import eigenframe, structure_field
 from geometry import (constant_metric_in_frame, covariant_derivative_in_frame,
                       levi_civita_connection, weitzenbock_connection)
 from manifolds import m2_natural_frame, poincare_metric, sphere_metric
@@ -22,7 +22,7 @@ from manifolds import m2_natural_frame, poincare_metric, sphere_metric
 IMAGES = Path(__file__).parent / "images"
 FONT = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf"  # has θ and π
 
-FRAME_SIGMA = 1.0            # Blur of the structure tensor, in grid steps
+FRAME_SIGMA = 1.0            # Blur of the structure field, in grid steps
 
 R2_SIZE = 512                # Grid of R2, [R2_SIZE, R2_SIZE]
 R2_WAVELENGTH = 64           # Wavelength of the circular waves, in grid steps
@@ -38,7 +38,7 @@ XI = 4.0
 METRIC = torch.diag(torch.tensor([1.0, 1.0, XI**2]))  # in the frame A
 MARGIN = 16                  # Orientations at either end left out, as θ is not periodic
 THETA_STEP = 8               # Draw a frame every THETA_STEP-th orientation
-RIBBON_SIGMA = 8.0           # Blur of the structure tensor of the ribbon, in grid steps
+RIBBON_SIGMA = 8.0           # Blur of the structure field of the ribbon, in grid steps
 SPACE_TICKS = (-20, -10, 0, 10, 20)
 THETA_TICKS = {0: "0", 0.5: "π/2", 1: "π", 1.5: "3π/2", 2: "2π"}  # θ / π and its label
 
@@ -128,7 +128,7 @@ def show_flat_panels(axes, f, frame, first, second, step: int, frame_length: flo
         frame_ax.quiver(cols, rows, v[:, 1], v[:, 0], color=color, pivot="mid",
                         angles="xy", scale_units="xy", scale=frame_length / (0.8 * step),
                         headwidth=0, headlength=0, headaxislength=0, width=0.004)
-    frame_ax.set_title("Structure tensor frame", fontsize=12)
+    frame_ax.set_title("Locally adaptive frame", fontsize=12)
     add_frame_legend(frame_ax, ["$v_0$ along", "$v_1$ across"])
 
     # The sign of v_1 is arbitrary, so that of (δf)_1 is too, but not that of (δf)_11.
@@ -160,8 +160,8 @@ def make_r2_figure(path: Path) -> None:
     f = circular_waves().unsqueeze(0)
     metric = euclidean(2)
     levi_civita = levi_civita_connection(metric)
-    form = structure_tensor(f, FRAME_SIGMA)
-    _, frame = eigenframe(form, metric)
+    structure = structure_field(f, metric, FRAME_SIGMA)
+    _, frame = eigenframe(structure, metric)
     first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
     second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
 
@@ -192,8 +192,8 @@ def make_poincare_figure(path: Path) -> None:
     f = horocycle_waves().unsqueeze(0)
     metric = poincare_metric(DISK_SIZE)
     levi_civita = levi_civita_connection(metric)
-    form = structure_tensor(f, FRAME_SIGMA)
-    _, frame = eigenframe(form, metric)
+    structure = structure_field(f, metric, FRAME_SIGMA)
+    _, frame = eigenframe(structure, metric)
     first = covariant_derivative_in_frame(f, frame, levi_civita, order=1)[0, ..., 1]
     second = covariant_derivative_in_frame(f, frame, levi_civita, order=2)[0, ..., 1, 1]
     outside = disk_coordinates().abs() > DISK_RADIUS
@@ -214,8 +214,9 @@ def make_poincare_figure(path: Path) -> None:
 def ribbon() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     A = m2_natural_frame(ORIENTATIONS, SPACING)
     f = helical_ribbon(*ribbon_coordinates()).unsqueeze(0)
-    form = structure_tensor(f, RIBBON_SIGMA)
-    _, frame = eigenframe(form, constant_metric_in_frame(METRIC, A))
+    metric = constant_metric_in_frame(METRIC, A)
+    structure = structure_field(f, metric, RIBBON_SIGMA)
+    _, frame = eigenframe(structure, metric)
     return f, frame, weitzenbock_connection(A)
 
 
@@ -373,7 +374,7 @@ def make_m2_figure(path: Path) -> None:
     (signal_ax, frame_ax), derivative_axes = axes
     signal_ax.set_title("$f$", fontsize=12)
     add_colorbar(signal_ax, "magma", 0, 1)
-    frame_ax.set_title("Structure tensor frame", fontsize=12)
+    frame_ax.set_title("Locally adaptive frame", fontsize=12)
     add_frame_legend(frame_ax, ["$v_0$ along", "$v_1$ across", "$v_2$ through"])
     for ax, i, cmap in zip(derivative_axes, RIBBON_DIRECTIONS, cmaps):
         ax.set_title(rf"$|(\delta f)_{i}|$", fontsize=12)
@@ -469,8 +470,8 @@ def make_s2_figure(path: Path) -> None:
     metric = sphere_metric(*SPHERE_GRID)
     f_padded, metric_padded = pad_sphere(f), pad_sphere(metric)
     levi_civita = levi_civita_connection(metric_padded)
-    form = structure_tensor(f_padded, FRAME_SIGMA)
-    _, frame = eigenframe(form, metric_padded)
+    structure = structure_field(f_padded, metric_padded, FRAME_SIGMA)
+    _, frame = eigenframe(structure, metric_padded)
     first = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=1)[..., 1]
     second = covariant_derivative_in_frame(f_padded, frame, levi_civita, order=2)[..., 1, 1]
     first, second = crop_sphere(first)[0].abs(), crop_sphere(second)[0]
@@ -497,7 +498,7 @@ def make_s2_figure(path: Path) -> None:
     (signal_ax, frame_ax), (first_ax, second_ax) = axes
     signal_ax.set_title("$f$", fontsize=12)
     add_colorbar(signal_ax, "gray", 0, 1)
-    frame_ax.set_title("Structure tensor frame", fontsize=12)
+    frame_ax.set_title("Locally adaptive frame", fontsize=12)
     add_frame_legend(frame_ax, ["$v_0$ along", "$v_1$ across"])
     first_ax.set_title(r"$|(\delta f)_1|$", fontsize=12)
     add_colorbar(first_ax, first_cmap, 0, first_limit)
